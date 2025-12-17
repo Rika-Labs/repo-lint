@@ -1,7 +1,7 @@
 {
   "name": "repo-lint",
   "version": "0.1.0",
-  "description": "TypeScript DSL types for repo-lint config files",
+  "description": "High-performance filesystem layout linter with TypeScript DSL config",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -18,15 +18,28 @@
     "typescript",
     "monorepo",
     "architecture",
-    "lint",
-    "types"
+    "lint"
   ],
   "main": "index.js",
   "types": "types/index.d.ts",
+  "bin": {
+    "repo-lint": "./bin/repo-lint"
+  },
   "files": [
     "index.js",
+    "install.js",
+    "bin",
     "types"
   ],
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "dependencies": {
+    "tar": "^7.0.0"
+  },
+  "optionalDependencies": {
+    "adm-zip": "^0.5.10"
+  },
   "engines": {
     "node": ">=16"
   }

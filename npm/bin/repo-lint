@@ -1,0 +1,23 @@
+#!/usr/bin/env node
+
+const { spawn } = require("child_process");
+const path = require("path");
+const fs = require("fs");
+
+const binName = process.platform === "win32" ? "repo-lint.exe" : "repo-lint";
+const binPath = path.join(__dirname, binName);
+
+if (!fs.existsSync(binPath)) {
+  console.error("repo-lint binary not found. Try reinstalling the package:");
+  console.error("  npm install repo-lint");
+  process.exit(1);
+}
+
+const child = spawn(binPath, process.argv.slice(2), {
+  stdio: "inherit",
+  shell: false,
+});
+
+child.on("close", (code) => {
+  process.exit(code ?? 0);
+});

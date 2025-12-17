@@ -42,11 +42,15 @@ export default defineConfig({
     })),
 
     npm: opt(dir({
+      bin: dir({
+        "repo-lint": file(),
+      }),
       types: dir({
         "index.d.ts": file(),
       }),
       "package.json": file(),
-      "index.js": opt(file()),
+      "index.js": file(),
+      "install.js": file(),
       "README.md": opt(file()),
     })),
 
