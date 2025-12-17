@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.3] - 2024-12-17
+
+### Fixed
+
+- Removed flaky test caused by HashMap iteration order non-determinism
+- Fixed cross-platform path handling in recursive pattern tests
+
+### Changed
+
+- Release workflow now requires quality gate (fmt, clippy, tests on all platforms) before build
+
 ## [0.3.2] - 2024-12-17
 
 ### Fixed
