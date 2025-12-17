@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use swc_common::sync::Lrc;
 use swc_common::{FileName, SourceMap, Spanned};
 use swc_ecma_ast::*;
@@ -33,20 +33,107 @@ pub enum ParseError {
     InvalidValue { field: String, message: String },
 }
 
+use std::cell::RefCell;
+
 pub struct ConfigParser {
     source_map: Lrc<SourceMap>,
+    layout_cache: RefCell<HashMap<PathBuf, HashMap<String, LayoutNode>>>,
 }
 
 impl ConfigParser {
     pub fn new() -> Self {
         Self {
             source_map: Lrc::new(SourceMap::default()),
+            layout_cache: RefCell::new(HashMap::new()),
         }
     }
 
     pub fn parse_file(&self, path: &Path) -> Result<ConfigIR, ParseError> {
         let content = std::fs::read_to_string(path)?;
-        self.parse_string(&content, path.to_string_lossy().as_ref())
+        let config = self.parse_string(&content, path.to_string_lossy().as_ref())?;
+
+        if let Some(extends_path) = config.extends.clone() {
+            let base_path = self.resolve_import(path, &extends_path).ok_or_else(|| {
+                ParseError::InvalidValue {
+                    field: "extends".to_string(),
+                    message: format!("Could not resolve extended config: {}", extends_path),
+                }
+            })?;
+            let base_config = self.parse_file(&base_path)?;
+            let mut merged = config;
+            merged.merge(base_config);
+            return Ok(merged);
+        }
+
+        Ok(config)
+    }
+
+    pub fn resolve_import(&self, current_file: &Path, specifier: &str) -> Option<PathBuf> {
+        let dir = current_file.parent()?;
+
+        // Support @/ as root-relative path
+        if specifier.starts_with("@/") {
+            let mut root = dir;
+            let mut current = Some(dir);
+            while let Some(d) = current {
+                if d.join("repo-lint.config.ts").exists() {
+                    root = d;
+                }
+                current = d.parent();
+            }
+            let mut path = root.join(&specifier[2..]);
+            if !path.exists() && path.extension().is_none() {
+                path.set_extension("ts");
+            }
+            if path.exists() {
+                return Some(path);
+            }
+        }
+
+        // Try relative path
+        if specifier.starts_with('.') {
+            let mut path = dir.join(specifier);
+            if !path.exists() && path.extension().is_none() {
+                path.set_extension("ts");
+            }
+            if path.exists() {
+                return Some(path);
+            }
+            // Try index.ts if it's a directory
+            let dir_path = dir.join(specifier);
+            if dir_path.is_dir() {
+                let index_path = dir_path.join("index.ts");
+                if index_path.exists() {
+                    return Some(index_path);
+                }
+            }
+        }
+
+        // Try node_modules (basic)
+        let mut current_dir = Some(dir);
+        while let Some(d) = current_dir {
+            let node_modules = d.join("node_modules");
+            if node_modules.exists() {
+                let pkg_path = node_modules.join(specifier);
+                let mut path = pkg_path.clone();
+                if !path.exists() && path.extension().is_none() {
+                    path.set_extension("ts");
+                }
+                if path.exists() {
+                    return Some(path);
+                }
+                // Try package.json main if it's a directory
+                if pkg_path.is_dir() {
+                    let config_path = pkg_path.join("repo-lint.config.ts");
+                    if config_path.exists() {
+                        return Some(config_path);
+                    }
+                }
+            }
+            current_dir = d.parent();
+        }
+
+        None
     }
 
     pub fn parse_string(&self, content: &str, filename: &str) -> Result<ConfigIR, ParseError> {
@@ -84,25 +171,69 @@ impl ConfigParser {
             }
         })?;
 
-        self.extract_config(&module)
+        self.extract_config(&module, Path::new(filename))
     }
 
-    fn extract_config(&self, module: &Module) -> Result<ConfigIR, ParseError> {
+    fn extract_config(&self, module: &Module, current_path: &Path) -> Result<ConfigIR, ParseError> {
         let mut variables: HashMap<String, &Expr> = HashMap::new();
+        let mut imported_layouts: HashMap<String, LayoutNode> = HashMap::new();
+
         for item in &module.body {
-            if let ModuleItem::Stmt(Stmt::Decl(Decl::Var(var_decl))) = item {
-                for decl in &var_decl.decls {
-                    if let Pat::Ident(ident) = &decl.name {
-                        if let Some(init) = &decl.init {
-                            variables.insert(ident.sym.to_string(), init.as_ref());
+            match item {
+                ModuleItem::Stmt(Stmt::Decl(Decl::Var(var_decl))) => {
+                    for decl in &var_decl.decls {
+                        if let Pat::Ident(ident) = &decl.name {
+                            if let Some(init) = &decl.init {
+                                variables.insert(ident.sym.to_string(), init.as_ref());
+                            }
                         }
                     }
                 }
+                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                    if let Decl::Var(var_decl) = &export.decl {
+                        for decl in &var_decl.decls {
+                            if let Pat::Ident(ident) = &decl.name {
+                                if let Some(init) = &decl.init {
+                                    variables.insert(ident.sym.to_string(), init.as_ref());
+                                }
+                            }
+                        }
+                    }
+                }
+                ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => {
+                    let specifier = import.src.value.as_ref();
+                    if let Some(import_path) = self.resolve_import(current_path, specifier) {
+                        if let Ok(exports) = self.parse_module_exports(&import_path) {
+                            for spec in &import.specifiers {
+                                match spec {
+                                    ImportSpecifier::Named(named) => {
+                                        let local = named.local.sym.to_string();
+                                        let imported = named
+                                            .imported
+                                            .as_ref()
+                                            .map(|i| match i {
+                                                ModuleExportName::Ident(id) => id.sym.to_string(),
+                                                ModuleExportName::Str(s) => s.value.to_string(),
+                                            })
+                                            .unwrap_or_else(|| local.clone());
+
+                                        if let Some(layout) = exports.get(&imported) {
+                                            imported_layouts.insert(local, layout.clone());
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
         }
+
         for item in &module.body {
             if let ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(export)) = item {
-                return self.eval_define_config(&export.expr, &variables);
+                return self.eval_define_config(&export.expr, &variables, &imported_layouts);
             }
         }
         Err(ParseError::MissingField(
@@ -110,18 +241,109 @@ impl ConfigParser {
         ))
     }
 
+    fn parse_module_exports(&self, path: &Path) -> Result<HashMap<String, LayoutNode>, ParseError> {
+        if let Some(cached) = self.layout_cache.borrow().get(path) {
+            return Ok(cached.clone());
+        }
+
+        let content = std::fs::read_to_string(path)?;
+        let source_file = self.source_map.new_source_file(
+            Lrc::new(FileName::Custom(path.to_string_lossy().to_string())),
+            content,
+        );
+
+        let lexer = Lexer::new(
+            Syntax::Typescript(TsSyntax {
+                tsx: false,
+                decorators: false,
+                dts: false,
+                no_early_errors: true,
+                disallow_ambiguous_jsx_like: false,
+            }),
+            EsVersion::Es2022,
+            StringInput::from(&*source_file),
+            None,
+        );
+
+        let mut parser = Parser::new_from(lexer);
+        let module = parser.parse_module().map_err(|e| ParseError::SyntaxError {
+            line: 0,
+            col: 0,
+            message: e.kind().msg().to_string(),
+        })?;
+
+        let mut exports = HashMap::new();
+        let mut variables = HashMap::new();
+        let imported_layouts = HashMap::new();
+
+        // Basic extraction similar to extract_config but looking for exports
+        for item in &module.body {
+            match item {
+                ModuleItem::Stmt(Stmt::Decl(Decl::Var(var_decl))) => {
+                    for decl in &var_decl.decls {
+                        if let Pat::Ident(ident) = &decl.name {
+                            if let Some(init) = &decl.init {
+                                variables.insert(ident.sym.to_string(), init.as_ref());
+                            }
+                        }
+                    }
+                }
+                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                    if let Decl::Var(var_decl) = &export.decl {
+                        for decl in &var_decl.decls {
+                            if let Pat::Ident(ident) = &decl.name {
+                                if let Some(init) = &decl.init {
+                                    let name = ident.sym.to_string();
+                                    variables.insert(name.clone(), init.as_ref());
+                                    if let Ok(layout) =
+                                        self.eval_layout_node(init, &variables, &imported_layouts)
+                                    {
+                                        exports.insert(name, layout);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        self.layout_cache
+            .borrow_mut()
+            .insert(path.to_path_buf(), exports.clone());
+        Ok(exports)
+    }
+
     fn eval_define_config(
         &self,
         expr: &Expr,
         variables: &HashMap<String, &Expr>,
+        imported_layouts: &HashMap<String, LayoutNode>,
     ) -> Result<ConfigIR, ParseError> {
         if let Expr::Call(call) = expr {
             if let Callee::Expr(callee_expr) = &call.callee {
                 if let Expr::Ident(ident) = &**callee_expr {
-                    if ident.sym.as_ref() == "defineConfig" {
+                    let fn_name = ident.sym.as_ref();
+                    if fn_name == "defineConfig" {
                         if let Some(arg) = call.args.first() {
-                            return self.eval_config_object(&arg.expr, variables);
+                            if let Expr::Call(inner_call) = &*arg.expr {
+                                if let Callee::Expr(inner_callee) = &inner_call.callee {
+                                    if let Expr::Ident(inner_ident) = &**inner_callee {
+                                        if inner_ident.sym.as_ref() == "nextjsPreset" {
+                                            return self.eval_nextjs_preset(
+                                                inner_call,
+                                                variables,
+                                                imported_layouts,
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            return self.eval_config_object(&arg.expr, variables, imported_layouts);
                         }
+                    } else if fn_name == "nextjsPreset" {
+                        return self.eval_nextjs_preset(call, variables, imported_layouts);
                     }
                 }
             }
@@ -130,14 +352,106 @@ impl ConfigParser {
         Err(ParseError::UnsupportedExpression {
             line: loc.0,
             col: loc.1,
-            message: "Expected defineConfig({...})".to_string(),
+            message: "Expected defineConfig({...}) or nextjsPreset(...)".to_string(),
         })
+    }
+
+    fn eval_nextjs_preset(
+        &self,
+        call: &CallExpr,
+        _variables: &HashMap<String, &Expr>,
+        _imported_layouts: &HashMap<String, LayoutNode>,
+    ) -> Result<ConfigIR, ParseError> {
+        let mut route_case = CaseStyle::Kebab;
+        // let mut require_tests = false;
+
+        if let Some(arg) = call.args.first() {
+            if let Ok(obj) = self.expect_object(&arg.expr) {
+                for prop in &obj.props {
+                    if let PropOrSpread::Prop(prop) = prop {
+                        if let Prop::KeyValue(kv) = &**prop {
+                            let key = self.get_prop_name(&kv.key)?;
+                            match key.as_str() {
+                                "routeCase" => route_case = self.eval_case_style(&kv.value)?,
+                                // "requireTests" => require_tests = self.expect_bool(&kv.value)?,
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Basic Next.js App Router structure
+        let mut app_children = HashMap::new();
+        app_children.insert(
+            "layout.tsx".to_string(),
+            LayoutNode::File {
+                pattern: None,
+                optional: false,
+                required: true,
+                case: None,
+            },
+        );
+        app_children.insert(
+            "page.tsx".to_string(),
+            LayoutNode::File {
+                pattern: None,
+                optional: true,
+                required: false,
+                case: None,
+            },
+        );
+
+        let layout = LayoutNode::Dir {
+            children: {
+                let mut root = HashMap::new();
+                root.insert(
+                    "app".to_string(),
+                    LayoutNode::Dir {
+                        children: {
+                            let mut app = HashMap::new();
+                            app.insert(
+                                "$routes".to_string(),
+                                LayoutNode::Recursive {
+                                    max_depth: 10,
+                                    child: Box::new(LayoutNode::Param {
+                                        name: "route".to_string(),
+                                        case: route_case,
+                                        child: Box::new(LayoutNode::Dir {
+                                            children: app_children,
+                                            optional: false,
+                                            required: false,
+                                            strict: false,
+                                            max_depth: None,
+                                        }),
+                                    }),
+                                },
+                            );
+                            app
+                        },
+                        optional: false,
+                        required: true,
+                        strict: false,
+                        max_depth: None,
+                    },
+                );
+                root
+            },
+            optional: false,
+            required: false,
+            strict: false,
+            max_depth: None,
+        };
+
+        Ok(ConfigIR::new(layout))
     }
 
     fn eval_config_object(
         &self,
         expr: &Expr,
         variables: &HashMap<String, &Expr>,
+        imported_layouts: &HashMap<String, LayoutNode>,
     ) -> Result<ConfigIR, ParseError> {
         let obj = self.expect_object(expr)?;
 
@@ -152,6 +466,7 @@ impl ConfigParser {
         let mut dependencies = HashMap::new();
         let mut mirror = Vec::new();
         let mut when = HashMap::new();
+        let mut extends = None;
 
         for prop in &obj.props {
             if let PropOrSpread::Prop(prop) = prop {
@@ -159,7 +474,10 @@ impl ConfigParser {
                     let key = self.get_prop_name(&kv.key)?;
                     match key.as_str() {
                         "mode" => mode = self.eval_mode(&kv.value)?,
-                        "layout" => layout = Some(self.eval_layout_node(&kv.value, variables)?),
+                        "layout" => {
+                            layout =
+                                Some(self.eval_layout_node(&kv.value, variables, imported_layouts)?)
+                        }
                         "rules" => rules = self.eval_rules(&kv.value)?,
                         "boundaries" => boundaries = Some(self.eval_boundaries(&kv.value)?),
                         "deps" => deps = Some(self.eval_deps(&kv.value)?),
@@ -169,13 +487,12 @@ impl ConfigParser {
                         "dependencies" => dependencies = self.eval_dependencies(&kv.value)?,
                         "mirror" => mirror = self.eval_mirror(&kv.value)?,
                         "when" => when = self.eval_when(&kv.value)?,
+                        "extends" => extends = Some(self.expect_string(&kv.value)?),
                         _ => {}
                     }
                 }
             }
         }
-
-        let layout = layout.ok_or(ParseError::MissingField("layout".to_string()))?;
 
         Ok(ConfigIR {
             mode,
@@ -189,6 +506,7 @@ impl ConfigParser {
             dependencies,
             mirror,
             when,
+            extends,
         })
     }
 
@@ -208,11 +526,15 @@ impl ConfigParser {
         &self,
         expr: &Expr,
         variables: &HashMap<String, &Expr>,
+        imported_layouts: &HashMap<String, LayoutNode>,
     ) -> Result<LayoutNode, ParseError> {
         if let Expr::Ident(ident) = expr {
             let var_name = ident.sym.as_ref();
+            if let Some(layout) = imported_layouts.get(var_name) {
+                return Ok(layout.clone());
+            }
             if let Some(var_expr) = variables.get(var_name) {
-                return self.eval_layout_node(var_expr, variables);
+                return self.eval_layout_node(var_expr, variables, imported_layouts);
             }
             let loc = self.get_expr_location(expr);
             return Err(ParseError::UnsupportedExpression {
@@ -226,14 +548,14 @@ impl ConfigParser {
                 if let Expr::Ident(ident) = &**callee_expr {
                     let fn_name = ident.sym.as_ref();
                     return match fn_name {
-                        "dir" | "directory" => self.eval_dir(call, variables),
+                        "dir" | "directory" => self.eval_dir(call, variables, imported_layouts),
                         "file" => self.eval_file(call),
-                        "opt" | "optional" => self.eval_opt(call, variables),
-                        "required" => self.eval_required(call, variables),
-                        "param" => self.eval_param(call, variables),
-                        "many" => self.eval_many(call, variables),
-                        "recursive" => self.eval_recursive(call, variables),
-                        "either" => self.eval_either(call, variables),
+                        "opt" | "optional" => self.eval_opt(call, variables, imported_layouts),
+                        "required" => self.eval_required(call, variables, imported_layouts),
+                        "param" => self.eval_param(call, variables, imported_layouts),
+                        "many" => self.eval_many(call, variables, imported_layouts),
+                        "recursive" => self.eval_recursive(call, variables, imported_layouts),
+                        "either" => self.eval_either(call, variables, imported_layouts),
                         _ => {
                             let loc = self.get_expr_location(expr);
                             Err(ParseError::UnsupportedExpression {
@@ -260,6 +582,7 @@ impl ConfigParser {
         &self,
         call: &CallExpr,
         variables: &HashMap<String, &Expr>,
+        imported_layouts: &HashMap<String, LayoutNode>,
     ) -> Result<LayoutNode, ParseError> {
         let mut children = HashMap::new();
         let mut strict = false;
@@ -271,7 +594,7 @@ impl ConfigParser {
                 if let PropOrSpread::Prop(prop) = prop {
                     if let Prop::KeyValue(kv) = &**prop {
                         let key = self.get_prop_name(&kv.key)?;
-                        let value = self.eval_layout_node(&kv.value, variables)?;
+                        let value = self.eval_layout_node(&kv.value, variables, imported_layouts)?;
                         children.insert(key, value);
                     }
                 }
@@ -351,9 +674,10 @@ impl ConfigParser {
         &self,
         call: &CallExpr,
         variables: &HashMap<String, &Expr>,
+        imported_layouts: &HashMap<String, LayoutNode>,
     ) -> Result<LayoutNode, ParseError> {
         if let Some(arg) = call.args.first() {
-            let mut node = self.eval_layout_node(&arg.expr, variables)?;
+            let mut node = self.eval_layout_node(&arg.expr, variables, imported_layouts)?;
             match &mut node {
                 LayoutNode::Dir { optional, .. } => *optional = true,
                 LayoutNode::File { optional, .. } => *optional = true,
@@ -370,9 +694,10 @@ impl ConfigParser {
         &self,
         call: &CallExpr,
         variables: &HashMap<String, &Expr>,
+        imported_layouts: &HashMap<String, LayoutNode>,
     ) -> Result<LayoutNode, ParseError> {
         if let Some(arg) = call.args.first() {
-            let mut node = self.eval_layout_node(&arg.expr, variables)?;
+            let mut node = self.eval_layout_node(&arg.expr, variables, imported_layouts)?;
             match &mut node {
                 LayoutNode::Dir { required, .. } => *required = true,
                 LayoutNode::File { required, .. } => *required = true,
@@ -389,6 +714,7 @@ impl ConfigParser {
         &self,
         call: &CallExpr,
         variables: &HashMap<String, &Expr>,
+        imported_layouts: &HashMap<String, LayoutNode>,
     ) -> Result<LayoutNode, ParseError> {
         if call.args.len() < 2 {
             return Err(ParseError::MissingField(
@@ -418,7 +744,7 @@ impl ConfigParser {
             name = opts_str.unwrap_or_else(|| "$param".to_string());
         }
 
-        let child = self.eval_layout_node(&call.args[1].expr, variables)?;
+        let child = self.eval_layout_node(&call.args[1].expr, variables, imported_layouts)?;
 
         Ok(LayoutNode::Param {
             name,
@@ -431,6 +757,7 @@ impl ConfigParser {
         &self,
         call: &CallExpr,
         variables: &HashMap<String, &Expr>,
+        imported_layouts: &HashMap<String, LayoutNode>,
     ) -> Result<LayoutNode, ParseError> {
         let (case, max, child_idx) = if call.args.len() >= 2 {
             if let Ok(obj) = self.expect_object(&call.args[0].expr) {
@@ -462,7 +789,7 @@ impl ConfigParser {
             ));
         }
 
-        let child = self.eval_layout_node(&call.args[child_idx].expr, variables)?;
+        let child = self.eval_layout_node(&call.args[child_idx].expr, variables, imported_layouts)?;
 
         Ok(LayoutNode::Many {
             case,
@@ -475,6 +802,7 @@ impl ConfigParser {
         &self,
         call: &CallExpr,
         variables: &HashMap<String, &Expr>,
+        imported_layouts: &HashMap<String, LayoutNode>,
     ) -> Result<LayoutNode, ParseError> {
         let (max_depth, child_idx) = if call.args.len() >= 2 {
             if let Ok(obj) = self.expect_object(&call.args[0].expr) {
@@ -503,7 +831,7 @@ impl ConfigParser {
             ));
         }
 
-        let child = self.eval_layout_node(&call.args[child_idx].expr, variables)?;
+        let child = self.eval_layout_node(&call.args[child_idx].expr, variables, imported_layouts)?;
 
         Ok(LayoutNode::Recursive {
             max_depth,
@@ -515,6 +843,7 @@ impl ConfigParser {
         &self,
         call: &CallExpr,
         variables: &HashMap<String, &Expr>,
+        imported_layouts: &HashMap<String, LayoutNode>,
     ) -> Result<LayoutNode, ParseError> {
         if call.args.is_empty() {
             return Err(ParseError::MissingField(
@@ -524,7 +853,7 @@ impl ConfigParser {
 
         let mut variants = Vec::new();
         for arg in &call.args {
-            let variant = self.eval_layout_node(&arg.expr, variables)?;
+            let variant = self.eval_layout_node(&arg.expr, variables, imported_layouts)?;
             variants.push(variant);
         }
 
@@ -917,7 +1246,7 @@ export default defineConfig({
 });
 "#;
         let result = parser.parse_string(config, "test.ts");
-        assert!(result.is_err());
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -1084,7 +1413,7 @@ export default defineConfig({
         let result = parser.parse_string(config, "test.ts");
         assert!(result.is_ok());
         let ir = result.unwrap();
-        if let LayoutNode::Dir { children, .. } = &ir.layout {
+        if let Some(LayoutNode::Dir { children, .. }) = &ir.layout {
             if let Some(LayoutNode::Dir {
                 children: app_children,
                 ..
@@ -1117,7 +1446,7 @@ export default defineConfig({
         let result = parser.parse_string(config, "test.ts");
         assert!(result.is_ok());
         let ir = result.unwrap();
-        if let LayoutNode::Dir { children, .. } = &ir.layout {
+        if let Some(LayoutNode::Dir { children, .. }) = &ir.layout {
             if let Some(LayoutNode::Dir {
                 children: app_children,
                 ..
@@ -1150,7 +1479,7 @@ export default defineConfig({
         let result = parser.parse_string(config, "test.ts");
         assert!(result.is_ok());
         let ir = result.unwrap();
-        if let LayoutNode::Dir { children, .. } = &ir.layout {
+        if let Some(LayoutNode::Dir { children, .. }) = &ir.layout {
             if let Some(LayoutNode::Dir {
                 children: routes_children,
                 ..

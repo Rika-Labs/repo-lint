@@ -39,8 +39,10 @@ impl InspectCommand {
                 if json_output {
                     let layout_json = serde_json::to_string_pretty(&config.layout)?;
                     println!("{}", layout_json);
+                } else if let Some(layout) = &config.layout {
+                    Self::print_layout_tree(layout, "", true);
                 } else {
-                    Self::print_layout_tree(&config.layout, "", true);
+                    println!("No layout defined in config.");
                 }
             }
             InspectType::Path { path } => {

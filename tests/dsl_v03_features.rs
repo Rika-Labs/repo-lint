@@ -52,7 +52,7 @@ export default defineConfig({
     assert!(result.is_ok());
     let config = result.unwrap();
 
-    if let repo_lint::config::LayoutNode::Dir { children, .. } = &config.layout {
+    if let Some(repo_lint::config::LayoutNode::Dir { children, .. }) = &config.layout {
         if let Some(repo_lint::config::LayoutNode::Dir { optional, .. }) = children.get("tests") {
             assert!(*optional);
         } else {
@@ -85,7 +85,7 @@ export default defineConfig({
     assert!(result.is_ok());
     let config = result.unwrap();
 
-    if let repo_lint::config::LayoutNode::Dir { children, .. } = &config.layout {
+    if let Some(repo_lint::config::LayoutNode::Dir { children, .. }) = &config.layout {
         if let Some(repo_lint::config::LayoutNode::File { required, .. }) =
             children.get("package.json")
         {
@@ -120,7 +120,7 @@ export default defineConfig({
     assert!(result.is_ok());
     let config = result.unwrap();
 
-    if let repo_lint::config::LayoutNode::Dir { children, .. } = &config.layout {
+    if let Some(repo_lint::config::LayoutNode::Dir { children, .. }) = &config.layout {
         if let Some(repo_lint::config::LayoutNode::Dir { strict, .. }) = children.get("hooks") {
             assert!(*strict);
         }
@@ -150,7 +150,7 @@ export default defineConfig({
     assert!(result.is_ok());
     let config = result.unwrap();
 
-    if let repo_lint::config::LayoutNode::Dir { children, .. } = &config.layout {
+    if let Some(repo_lint::config::LayoutNode::Dir { children, .. }) = &config.layout {
         if let Some(repo_lint::config::LayoutNode::Dir { max_depth, .. }) =
             children.get("components")
         {
@@ -182,7 +182,7 @@ export default defineConfig({
     assert!(result.is_ok());
     let config = result.unwrap();
 
-    if let repo_lint::config::LayoutNode::Dir { children, .. } = &config.layout {
+    if let Some(repo_lint::config::LayoutNode::Dir { children, .. }) = &config.layout {
         if let Some(repo_lint::config::LayoutNode::Dir {
             children: hooks_children,
             ..
@@ -223,7 +223,7 @@ export default defineConfig({
     assert!(result.is_ok());
     let config = result.unwrap();
 
-    if let repo_lint::config::LayoutNode::Dir { children, .. } = &config.layout {
+    if let Some(repo_lint::config::LayoutNode::Dir { children, .. }) = &config.layout {
         if let Some(repo_lint::config::LayoutNode::Dir {
             children: comp_children,
             ..
@@ -344,7 +344,7 @@ fn test_strict_mode_rejects_unknown_files() {
         max_depth: None,
     };
 
-    let matcher = repo_lint::engine::LayoutMatcher::new(layout);
+    let matcher = repo_lint::engine::LayoutMatcher::new(Some(layout));
 
     let result = matcher.match_path(Path::new("allowed.ts"));
     assert!(matches!(result, repo_lint::engine::MatchResult::Allowed));
@@ -376,7 +376,7 @@ fn test_file_case_validation() {
     );
 
     let layout = repo_lint::config::LayoutNode::dir(children);
-    let matcher = repo_lint::engine::LayoutMatcher::new(layout);
+    let matcher = repo_lint::engine::LayoutMatcher::new(Some(layout));
 
     let result = matcher.match_path(Path::new("use-auth.ts"));
     println!("Result for use-auth.ts: {:?}", result);
@@ -454,7 +454,7 @@ fn test_deeply_nested_recursive_patterns() {
     let mut root_children = HashMap::new();
     root_children.insert("src".to_string(), LayoutNode::dir(src_children));
 
-    let matcher = LayoutMatcher::new(LayoutNode::dir(root_children));
+    let matcher = LayoutMatcher::new(Some(LayoutNode::dir(root_children)));
 
     let is_allowed = |path: &str| -> bool {
         let path_buf: std::path::PathBuf = path.split('/').collect();

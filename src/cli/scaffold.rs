@@ -51,7 +51,11 @@ impl ScaffoldCommand {
 
         match &args.scaffold_type {
             ScaffoldType::Module { name, base_path } => {
-                let plan = Self::plan_module_scaffold(&config.layout, name, base_path)?;
+                let layout = config
+                    .layout
+                    .as_ref()
+                    .ok_or("No layout defined in config")?;
+                let plan = Self::plan_module_scaffold(layout, name, base_path)?;
 
                 if json_output {
                     println!("{}", serde_json::to_string_pretty(&plan)?);

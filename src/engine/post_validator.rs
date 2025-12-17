@@ -44,7 +44,9 @@ impl<'a> PostValidator<'a> {
     fn validate_required(&self, root_path: &Path, severity: Severity) -> Vec<Violation> {
         let mut violations = Vec::new();
         let mut required_paths = Vec::new();
-        Self::collect_required_paths(&self.config.layout, PathBuf::new(), &mut required_paths);
+        if let Some(layout) = &self.config.layout {
+            Self::collect_required_paths(layout, PathBuf::new(), &mut required_paths);
+        }
 
         for req_path in required_paths {
             let full_path = root_path.join(&req_path);
@@ -348,7 +350,7 @@ mod tests {
     fn create_test_config() -> ConfigIR {
         ConfigIR {
             mode: Mode::Strict,
-            layout: LayoutNode::dir(HashMap::new()),
+            layout: Some(LayoutNode::dir(HashMap::new())),
             rules: RulesConfig::default(),
             boundaries: None,
             deps: None,
@@ -358,6 +360,7 @@ mod tests {
             dependencies: HashMap::new(),
             mirror: vec![],
             when: HashMap::new(),
+            extends: None,
         }
     }
 
@@ -393,13 +396,13 @@ mod tests {
 
         let config = ConfigIR {
             mode: Mode::Strict,
-            layout: LayoutNode::Dir {
+            layout: Some(LayoutNode::Dir {
                 children,
                 optional: false,
                 required: false,
                 strict: false,
                 max_depth: None,
-            },
+            }),
             rules: RulesConfig::default(),
             boundaries: None,
             deps: None,
@@ -409,11 +412,14 @@ mod tests {
             dependencies: HashMap::new(),
             mirror: vec![],
             when: HashMap::new(),
+            extends: None,
         };
 
         let _validator = PostValidator::new(&config);
         let mut paths = Vec::new();
-        PostValidator::collect_required_paths(&config.layout, PathBuf::new(), &mut paths);
+        if let Some(layout) = &config.layout {
+            PostValidator::collect_required_paths(layout, PathBuf::new(), &mut paths);
+        }
 
         assert_eq!(paths.len(), 1);
         assert_eq!(paths[0], PathBuf::from("required.ts"));
@@ -431,7 +437,7 @@ mod tests {
 
         let config = ConfigIR {
             mode: Mode::Strict,
-            layout: LayoutNode::dir(HashMap::new()),
+            layout: Some(LayoutNode::dir(HashMap::new())),
             rules: RulesConfig::default(),
             boundaries: None,
             deps: None,
@@ -441,6 +447,7 @@ mod tests {
             dependencies: HashMap::new(),
             mirror: vec![],
             when,
+            extends: None,
         };
 
         let mut validator = PostValidator::new(&config);

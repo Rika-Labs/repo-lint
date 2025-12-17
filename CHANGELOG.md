@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [0.3.3] - 2024-12-17
 
+### Added
+
+- **Monorepo Support & Config Inheritance**
+  - **Config Inheritance (`extends`)**: Configurations can now extend other config files, allowing for shared base rules and layouts across a monorepo.
+  - **Workspace Import Resolution**: Support for ES module `import` statements in configuration files. Resolves relative paths and `node_modules` without needing a local Node.js environment.
+  - **Built-in Presets**: New `nextjsPreset()` function for quickly setting up Next.js App Router validation.
+  - **Optional Layout**: Root configurations can now skip the `layout` property, making them perfect for pure workspace discovery and global rule definitions.
+
 ### Fixed
 
 - Removed flaky test caused by HashMap iteration order non-determinism

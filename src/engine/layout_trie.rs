@@ -34,15 +34,20 @@ pub enum MatchResult {
 
 #[derive(Debug, Clone)]
 pub struct LayoutMatcher {
-    root: LayoutNode,
+    root: Option<LayoutNode>,
 }
 
 impl LayoutMatcher {
-    pub fn new(root: LayoutNode) -> Self {
+    pub fn new(root: Option<LayoutNode>) -> Self {
         Self { root }
     }
 
     pub fn match_path(&self, path: &Path) -> MatchResult {
+        let root = match &self.root {
+            Some(r) => r,
+            None => return MatchResult::Allowed,
+        };
+
         let components: Vec<&str> = path
             .components()
             .filter_map(|c| c.as_os_str().to_str())
@@ -52,7 +57,7 @@ impl LayoutMatcher {
             return MatchResult::Allowed;
         }
 
-        self.match_segments(&components, &self.root, Vec::new())
+        self.match_segments(&components, root, Vec::new())
     }
 
     fn match_segments(
@@ -584,12 +589,17 @@ impl LayoutMatcher {
     }
 
     pub fn get_expected_children(&self, path: &Path) -> Vec<ExpectedChild> {
+        let root = match &self.root {
+            Some(r) => r,
+            None => return Vec::new(),
+        };
+
         let components: Vec<&str> = path
             .components()
             .filter_map(|c| c.as_os_str().to_str())
             .collect();
 
-        Self::get_expected_at(&components, &self.root)
+        Self::get_expected_at(&components, root)
     }
 
     fn get_expected_at(segments: &[&str], node: &LayoutNode) -> Vec<ExpectedChild> {
@@ -681,7 +691,7 @@ mod tests {
     #[test]
     fn test_match_valid_path() {
         let layout = create_simple_layout();
-        let matcher = LayoutMatcher::new(layout);
+        let matcher = LayoutMatcher::new(Some(layout));
 
         let result = matcher.match_path(Path::new("src"));
         assert!(matches!(result, MatchResult::Allowed));
@@ -693,7 +703,7 @@ mod tests {
     #[test]
     fn test_match_invalid_path() {
         let layout = create_simple_layout();
-        let matcher = LayoutMatcher::new(layout);
+        let matcher = LayoutMatcher::new(Some(layout));
 
         let result = matcher.match_path(Path::new("lib"));
         assert!(matches!(result, MatchResult::NotInLayout { .. }));
@@ -717,7 +727,7 @@ mod tests {
         root_children.insert("src".to_string(), LayoutNode::dir(src_children));
 
         let layout = LayoutNode::dir(root_children);
-        let matcher = LayoutMatcher::new(layout);
+        let matcher = LayoutMatcher::new(Some(layout));
 
         let result = matcher.match_path(Path::new("src/services/my-module"));
         assert!(matches!(result, MatchResult::AllowedParam { .. }));
@@ -744,7 +754,7 @@ mod tests {
         root_children.insert("src".to_string(), LayoutNode::dir(src_children));
 
         let layout = LayoutNode::dir(root_children);
-        let matcher = LayoutMatcher::new(layout);
+        let matcher = LayoutMatcher::new(Some(layout));
 
         let result = matcher.match_path(Path::new("src/services/my_module/index.ts"));
         assert!(matches!(result, MatchResult::AllowedParam { .. }));
@@ -768,7 +778,7 @@ mod tests {
         root_children.insert("app".to_string(), LayoutNode::dir(app_children));
 
         let layout = LayoutNode::dir(root_children);
-        let matcher = LayoutMatcher::new(layout);
+        let matcher = LayoutMatcher::new(Some(layout));
 
         let result = matcher.match_path(Path::new("app/dashboard/page.tsx"));
         assert!(matches!(
@@ -806,7 +816,7 @@ mod tests {
         root_children.insert("app".to_string(), LayoutNode::dir(app_children));
 
         let layout = LayoutNode::dir(root_children);
-        let matcher = LayoutMatcher::new(layout);
+        let matcher = LayoutMatcher::new(Some(layout));
 
         let result = matcher.match_path(Path::new("app/a/page.tsx"));
         assert!(matches!(
@@ -843,7 +853,7 @@ mod tests {
         root_children.insert("routes".to_string(), LayoutNode::dir(routes_children));
 
         let layout = LayoutNode::dir(root_children);
-        let matcher = LayoutMatcher::new(layout);
+        let matcher = LayoutMatcher::new(Some(layout));
 
         let result = matcher.match_path(Path::new("routes/dashboard/index.ts"));
         assert!(matches!(
@@ -867,7 +877,7 @@ mod tests {
         root_children.insert("services".to_string(), LayoutNode::dir(services_children));
 
         let layout = LayoutNode::dir(root_children);
-        let matcher = LayoutMatcher::new(layout);
+        let matcher = LayoutMatcher::new(Some(layout));
 
         let result = matcher.match_path(Path::new("services/MyModule/index.ts"));
         match result {
@@ -887,7 +897,7 @@ mod tests {
         root_children.insert("lib".to_string(), LayoutNode::dir(HashMap::new()));
 
         let layout = LayoutNode::dir(root_children);
-        let matcher = LayoutMatcher::new(layout);
+        let matcher = LayoutMatcher::new(Some(layout));
 
         let result = matcher.match_path(Path::new("unknown/file.ts"));
         match result {
@@ -918,7 +928,7 @@ mod tests {
         root_children.insert("app".to_string(), LayoutNode::dir(app_children));
 
         let layout = LayoutNode::dir(root_children);
-        let matcher = LayoutMatcher::new(layout);
+        let matcher = LayoutMatcher::new(Some(layout));
 
         let result = matcher.match_path(Path::new("app/a/b/c/page.tsx"));
         assert!(
@@ -941,7 +951,7 @@ mod tests {
         root_children.insert("routes".to_string(), either);
 
         let layout = LayoutNode::dir(root_children);
-        let matcher = LayoutMatcher::new(layout);
+        let matcher = LayoutMatcher::new(Some(layout));
 
         let result = matcher.match_path(Path::new("routes/unknown.js"));
         match result {
@@ -972,7 +982,7 @@ mod tests {
         root_children.insert("app".to_string(), LayoutNode::dir(app_children));
 
         let layout = LayoutNode::dir(root_children);
-        let matcher = LayoutMatcher::new(layout);
+        let matcher = LayoutMatcher::new(Some(layout));
 
         let result = matcher.match_path(Path::new("app/dashboard/settings/profile/page.tsx"));
         assert!(matches!(

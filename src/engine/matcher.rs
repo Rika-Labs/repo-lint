@@ -189,7 +189,7 @@ mod tests {
 
         ConfigIR {
             mode: Mode::Strict,
-            layout: LayoutNode::dir(root_children),
+            layout: Some(LayoutNode::dir(root_children)),
             rules: RulesConfig {
                 forbid_paths: vec!["**/utils/**".to_string()],
                 forbid_names: vec!["temp".to_string()],
@@ -203,6 +203,7 @@ mod tests {
             dependencies: HashMap::new(),
             mirror: vec![],
             when: HashMap::new(),
+            extends: None,
         }
     }
 

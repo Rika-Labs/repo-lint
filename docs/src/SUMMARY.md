@@ -13,6 +13,7 @@
 - [Layout DSL](./configuration/layout-dsl.md)
 - [Rules](./configuration/rules.md)
 - [Boundaries](./configuration/boundaries.md)
+- [Monorepo Support](./configuration/monorepo.md)
 
 # CLI Reference
 

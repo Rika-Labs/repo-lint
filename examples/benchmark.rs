@@ -44,7 +44,7 @@ fn create_test_layout() -> LayoutNode {
 fn create_test_config() -> ConfigIR {
     ConfigIR {
         mode: Mode::Strict,
-        layout: create_test_layout(),
+        layout: Some(create_test_layout()),
         rules: RulesConfig {
             forbid_paths: vec!["**/utils/**".to_string(), "**/*.bak".to_string()],
             forbid_names: vec!["temp".to_string(), "new".to_string()],
@@ -58,6 +58,7 @@ fn create_test_config() -> ConfigIR {
         dependencies: std::collections::HashMap::new(),
         mirror: vec![],
         when: std::collections::HashMap::new(),
+        extends: None,
     }
 }
 

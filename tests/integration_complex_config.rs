@@ -1325,7 +1325,7 @@ export default defineConfig({
 })
 "#;
     let result = parser.parse_string(config, "test.ts");
-    assert!(result.is_err(), "Should fail when layout is missing");
+    assert!(result.is_ok(), "Should allow missing layout (optional now)");
 }
 
 #[test]

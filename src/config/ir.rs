@@ -77,6 +77,7 @@ impl CaseStyle {
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum LayoutNode {
     Dir {
+        #[serde(default)]
         children: HashMap<String, LayoutNode>,
         #[serde(default)]
         optional: bool,
@@ -119,6 +120,18 @@ pub enum LayoutNode {
 
 fn default_max_depth() -> usize {
     10
+}
+
+impl Default for LayoutNode {
+    fn default() -> Self {
+        Self::Dir {
+            children: HashMap::new(),
+            optional: false,
+            required: false,
+            strict: false,
+            max_depth: None,
+        }
+    }
 }
 
 impl LayoutNode {
@@ -315,11 +328,11 @@ pub struct WhenRequirement {
     pub requires: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct ConfigIR {
     #[serde(default)]
     pub mode: Mode,
-    pub layout: LayoutNode,
+    pub layout: Option<LayoutNode>,
     #[serde(default)]
     pub rules: RulesConfig,
     pub boundaries: Option<BoundariesConfig>,
@@ -336,6 +349,8 @@ pub struct ConfigIR {
     pub mirror: Vec<MirrorConfig>,
     #[serde(default)]
     pub when: HashMap<String, WhenRequirement>,
+    #[serde(default)]
+    pub extends: Option<String>,
 }
 
 fn default_use_gitignore() -> bool {
@@ -346,7 +361,7 @@ impl ConfigIR {
     pub fn new(layout: LayoutNode) -> Self {
         Self {
             mode: Mode::default(),
-            layout,
+            layout: Some(layout),
             rules: RulesConfig::default(),
             boundaries: None,
             deps: None,
@@ -356,6 +371,49 @@ impl ConfigIR {
             dependencies: HashMap::new(),
             mirror: Vec::new(),
             when: HashMap::new(),
+            extends: None,
+        }
+    }
+
+    pub fn merge(&mut self, base: ConfigIR) {
+        if self.mode == Mode::default() && base.mode != Mode::default() {
+            self.mode = base.mode;
+        }
+
+        if self.layout.is_none() {
+            self.layout = base.layout;
+        }
+
+        self.rules.forbid_paths.extend(base.rules.forbid_paths);
+        self.rules.forbid_names.extend(base.rules.forbid_names);
+        self.rules.ignore_paths.extend(base.rules.ignore_paths);
+
+        if self.boundaries.is_none() {
+            self.boundaries = base.boundaries;
+        }
+
+        if let Some(base_deps) = base.deps {
+            if let Some(ref mut deps) = self.deps {
+                deps.allow.extend(base_deps.allow);
+            } else {
+                self.deps = Some(base_deps);
+            }
+        }
+
+        self.ignore.extend(base.ignore);
+
+        if self.workspaces.is_empty() {
+            self.workspaces = base.workspaces;
+        }
+
+        for (k, v) in base.dependencies {
+            self.dependencies.entry(k).or_insert(v);
+        }
+
+        self.mirror.extend(base.mirror);
+
+        for (k, v) in base.when {
+            self.when.entry(k).or_insert(v);
         }
     }
 }

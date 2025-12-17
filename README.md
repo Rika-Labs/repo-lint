@@ -6,6 +6,7 @@ A high-performance filesystem layout linter with TypeScript DSL config.
 
 ## Features
 
+- **Monorepo Support**: Configuration inheritance (`extends`), workspace import resolution, and automatic child config discovery
 - **TypeScript DSL Config**: Define filesystem structure using `directory`, `file`, `optional`, `required`, `param`, `many`, `recursive`, and `either`
 - **High Performance**: Built in Rust with parallel file walking (~950k paths/sec)
 - **Recursive Matching**: Handle arbitrary-depth structures like Next.js App Router
@@ -136,6 +137,52 @@ repo-lint inspect rule forbidPaths             # Get rule details
 repo-lint inspect deps src/foo.ts              # Show import dependencies (M4)
 ```
 
+## Monorepo Support
+
+`repo-lint` is built for scale, making it easy to manage configurations across large monorepos.
+
+### Configuration Inheritance
+
+Use `extends` to share base rules and layouts. You can use the `@/` alias to refer to the repository root:
+
+```typescript
+// apps/sentinel/repo-lint.config.ts
+export default defineConfig({
+  extends: "@/repo-lint.config.ts",
+  rules: {
+    forbidPaths: ["**/tmp/**"]
+  }
+});
+```
+
+### Workspace Import Resolution
+
+Import layouts directly from other files or workspace packages:
+
+```typescript
+import { nextjsAppLayout } from "@intimetec/config/repo-lint/nextjs";
+
+export default defineConfig({
+  layout: directory({
+    src: nextjsAppLayout,
+  })
+});
+```
+
+### Root-Level Orchestration
+
+Define `workspaces` in your root config to automatically discover and run child configurations:
+
+```typescript
+// Root repo-lint.config.ts
+export default defineConfig({
+  workspaces: ["apps/*", "packages/*"],
+  rules: {
+    forbidNames: ["temp"] // Applied globally
+  }
+});
+```
+
 ## Config Reference
 
 ### DSL Functions
@@ -216,21 +263,14 @@ export default defineConfig({
 
 #### Next.js App Router
 
-The `nextjsAppRouter` preset provides a complete layout for Next.js 13+ App Router projects:
+The `nextjsPreset` provides a complete layout for Next.js 13+ App Router projects:
 
 ```typescript
-import { defineConfig, nextjsAppRouter, nextjsDefaultIgnore, nextjsDefaultIgnorePaths } from "@rikalabs/repo-lint";
+import { defineConfig, nextjsPreset } from "@rikalabs/repo-lint";
 
-export default defineConfig({
-  layout: nextjsAppRouter({ 
-    routeCase: "kebab",  // Route segment naming (default: "kebab")
-    maxDepth: 10,        // Max nesting depth for routes (default: 10)
-  }),
-  ignore: nextjsDefaultIgnore(),
-  rules: {
-    ignorePaths: nextjsDefaultIgnorePaths(),
-  },
-});
+export default defineConfig(nextjsPreset({ 
+  routeCase: "kebab",  // Route segment naming (default: "kebab")
+}));
 ```
 
 **What's included:**
