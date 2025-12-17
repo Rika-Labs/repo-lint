@@ -1,0 +1,12 @@
+[book]
+title = "repo-lint Documentation"
+authors = ["Rika Labs"]
+description = "A high-performance filesystem layout linter"
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/rika-labs/repo-lint"
+edit-url-template = "https://github.com/rika-labs/repo-lint/edit/main/docs/{path}"
