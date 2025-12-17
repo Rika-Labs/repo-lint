@@ -25,7 +25,11 @@ fn create_test_layout() -> LayoutNode {
     let mut services_children = HashMap::new();
     services_children.insert(
         "$module".to_string(),
-        LayoutNode::param("module", CaseStyle::Kebab, LayoutNode::dir(service_children)),
+        LayoutNode::param(
+            "module",
+            CaseStyle::Kebab,
+            LayoutNode::dir(service_children),
+        ),
     );
 
     let mut src_children = HashMap::new();
@@ -100,12 +104,7 @@ fn bench_walker_throughput() {
         let duration = start.elapsed();
 
         durations.push(duration);
-        println!(
-            "  Run {}: {} files in {:?}",
-            i + 1,
-            entries.len(),
-            duration
-        );
+        println!("  Run {}: {} files in {:?}", i + 1, entries.len(), duration);
     }
 
     let avg_duration: Duration = durations.iter().sum::<Duration>() / iterations as u32;
@@ -117,9 +116,7 @@ fn bench_walker_throughput() {
     if paths_per_sec >= 200_000.0 {
         println!("  [PASS] Meets target of 200k paths/sec");
     } else {
-        println!(
-            "  [INFO] Below 200k target (expected with small test set and SSD overhead)"
-        );
+        println!("  [INFO] Below 200k target (expected with small test set and SSD overhead)");
     }
 }
 
@@ -145,14 +142,23 @@ fn bench_matcher_throughput() {
         durations.push(duration);
 
         if i == 0 {
-            println!("  Run {}: {} paths in {:?}", i + 1, test_paths.len(), duration);
+            println!(
+                "  Run {}: {} paths in {:?}",
+                i + 1,
+                test_paths.len(),
+                duration
+            );
         }
     }
 
     let avg_duration: Duration = durations.iter().sum::<Duration>() / iterations as u32;
     let matches_per_sec = test_paths.len() as f64 / avg_duration.as_secs_f64();
 
-    println!("\n  Average: {:?} for {} paths", avg_duration, test_paths.len());
+    println!(
+        "\n  Average: {:?} for {} paths",
+        avg_duration,
+        test_paths.len()
+    );
     println!("  Throughput: {:.0} matches/sec", matches_per_sec);
 }
 
@@ -301,15 +307,15 @@ fn bench_full_check_xlarge() {
 
     println!("\n  Average: {:?}", avg_duration);
     println!("  Throughput: {:.0} files/sec", throughput);
-    println!(
-        "  Estimated 500k files: {:.2}s",
-        500_000.0 / throughput
-    );
-    
+    println!("  Estimated 500k files: {:.2}s", 500_000.0 / throughput);
+
     if throughput >= 2_000_000.0 {
         println!("  [PASS] Meets target of 2M files/sec!");
     } else {
-        println!("  [INFO] Current: {:.1}% of 2M target", throughput / 2_000_000.0 * 100.0);
+        println!(
+            "  [INFO] Current: {:.1}% of 2M target",
+            throughput / 2_000_000.0 * 100.0
+        );
     }
 }
 

@@ -34,7 +34,9 @@ impl IncrementalCache {
             if let Some((path, rest)) = line.split_once('\t') {
                 let parts: Vec<&str> = rest.split('\t').collect();
                 if parts.len() >= 2 {
-                    if let (Ok(hash), Ok(mtime)) = (parts[0].parse::<u64>(), parts[1].parse::<u64>()) {
+                    if let (Ok(hash), Ok(mtime)) =
+                        (parts[0].parse::<u64>(), parts[1].parse::<u64>())
+                    {
                         let violations: Vec<String> = if parts.len() > 2 {
                             parts[2..].iter().map(|s| s.to_string()).collect()
                         } else {

@@ -172,7 +172,8 @@ mod tests {
 
         let layout = LayoutNode::dir(module_children);
 
-        let plan = ScaffoldCommand::plan_module_scaffold(&layout, "billing", "src/services").unwrap();
+        let plan =
+            ScaffoldCommand::plan_module_scaffold(&layout, "billing", "src/services").unwrap();
 
         assert!(!plan.actions.is_empty());
         assert!(plan.actions.iter().any(|a| a.path.contains("billing")));

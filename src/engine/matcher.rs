@@ -63,7 +63,7 @@ impl FileMatcher {
             violations.push(Violation {
                 path: path_str.clone(),
                 rule_id: CompactString::const_new(rv.rule_id()),
-                message: CompactString::new(&rv.message()),
+                message: CompactString::new(rv.message()),
                 severity,
                 fix_suggestion: None,
             });
@@ -71,7 +71,9 @@ impl FileMatcher {
 
         let match_result = self.layout_matcher.match_path(path);
         match match_result {
-            MatchResult::Allowed | MatchResult::AllowedParam { .. } | MatchResult::AllowedMany { .. } => {}
+            MatchResult::Allowed
+            | MatchResult::AllowedParam { .. }
+            | MatchResult::AllowedMany { .. } => {}
             MatchResult::Denied { reason } => {
                 violations.push(Violation {
                     path: path_str.clone(),
@@ -99,7 +101,10 @@ impl FileMatcher {
                 violations.push(Violation {
                     path: path_str,
                     rule_id: CompactString::const_new("layout"),
-                    message: CompactString::new(&format!("missing required children: {:?}", expected)),
+                    message: CompactString::new(format!(
+                        "missing required children: {:?}",
+                        expected
+                    )),
                     severity,
                     fix_suggestion: None,
                 });

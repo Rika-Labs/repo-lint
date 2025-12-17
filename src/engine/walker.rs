@@ -171,7 +171,7 @@ impl Walker {
         });
 
         drop(sender);
-        
+
         let mut results = Vec::with_capacity(4096);
         for batch in receiver {
             results.extend(batch);
@@ -186,8 +186,7 @@ impl Walker {
             .output()?;
 
         if !output.status.success() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 String::from_utf8_lossy(&output.stderr).to_string(),
             ));
         }
@@ -214,8 +213,8 @@ impl Walker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     fn create_test_structure() -> TempDir {
         let temp = TempDir::new().unwrap();

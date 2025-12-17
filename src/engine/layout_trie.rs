@@ -55,20 +55,33 @@ impl LayoutMatcher {
         match node {
             LayoutNode::Dir { children, .. } => {
                 if let Some(child) = children.get(current) {
-                    return self.match_segments(remaining, child, self.extend_path(&path_so_far, current));
+                    return self.match_segments(
+                        remaining,
+                        child,
+                        self.extend_path(&path_so_far, current),
+                    );
                 }
 
                 for (key, child) in children {
                     if key.starts_with('$') {
                         match child {
-                            LayoutNode::Param { name, case, child: inner } => {
+                            LayoutNode::Param {
+                                name,
+                                case,
+                                child: inner,
+                            } => {
                                 if case.validate(current) {
                                     let result = self.match_segments(
                                         remaining,
                                         inner,
                                         self.extend_path(&path_so_far, current),
                                     );
-                                    if matches!(result, MatchResult::Allowed | MatchResult::AllowedParam { .. } | MatchResult::AllowedMany { .. }) {
+                                    if matches!(
+                                        result,
+                                        MatchResult::Allowed
+                                            | MatchResult::AllowedParam { .. }
+                                            | MatchResult::AllowedMany { .. }
+                                    ) {
                                         return MatchResult::AllowedParam {
                                             name: name.clone(),
                                             value: current.to_string(),
@@ -102,7 +115,12 @@ impl LayoutMatcher {
                                     inner,
                                     self.extend_path(&path_so_far, current),
                                 );
-                                if matches!(result, MatchResult::Allowed | MatchResult::AllowedParam { .. } | MatchResult::AllowedMany { .. }) {
+                                if matches!(
+                                    result,
+                                    MatchResult::Allowed
+                                        | MatchResult::AllowedParam { .. }
+                                        | MatchResult::AllowedMany { .. }
+                                ) {
                                     return MatchResult::AllowedMany {
                                         values: vec![current.to_string()],
                                     };
@@ -153,7 +171,12 @@ impl LayoutMatcher {
                         child,
                         self.extend_path(&path_so_far, current),
                     );
-                    if matches!(result, MatchResult::Allowed | MatchResult::AllowedParam { .. } | MatchResult::AllowedMany { .. }) {
+                    if matches!(
+                        result,
+                        MatchResult::Allowed
+                            | MatchResult::AllowedParam { .. }
+                            | MatchResult::AllowedMany { .. }
+                    ) {
                         return MatchResult::AllowedParam {
                             name: name.clone(),
                             value: current.to_string(),
@@ -246,7 +269,10 @@ impl LayoutMatcher {
                 .iter()
                 .map(|(name, child)| ExpectedChild {
                     name: name.clone(),
-                    is_dir: matches!(child, LayoutNode::Dir { .. } | LayoutNode::Param { .. } | LayoutNode::Many { .. }),
+                    is_dir: matches!(
+                        child,
+                        LayoutNode::Dir { .. } | LayoutNode::Param { .. } | LayoutNode::Many { .. }
+                    ),
                     optional: child.is_optional(),
                     is_param: name.starts_with('$'),
                 })
@@ -267,8 +293,8 @@ pub struct ExpectedChild {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use crate::config::CaseStyle;
+    use std::collections::HashMap;
 
     fn create_simple_layout() -> LayoutNode {
         let mut src_children = HashMap::new();

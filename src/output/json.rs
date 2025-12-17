@@ -51,11 +51,8 @@ struct JsonSummary {
 impl Reporter for JsonReporter {
     fn report(&self, violations: &[Violation]) -> String {
         let mut sorted_violations: Vec<_> = violations.iter().collect();
-        sorted_violations.sort_by(|a, b| {
-            a.path
-                .cmp(&b.path)
-                .then_with(|| a.rule_id.cmp(&b.rule_id))
-        });
+        sorted_violations
+            .sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.rule_id.cmp(&b.rule_id)));
 
         let json_violations: Vec<JsonViolation> = sorted_violations
             .iter()

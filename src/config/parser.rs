@@ -15,9 +15,17 @@ pub enum ParseError {
     #[error("Failed to read config file: {0}")]
     IoError(#[from] std::io::Error),
     #[error("Syntax error at {line}:{col}: {message}")]
-    SyntaxError { line: usize, col: usize, message: String },
+    SyntaxError {
+        line: usize,
+        col: usize,
+        message: String,
+    },
     #[error("Unsupported expression at {line}:{col}: {message}")]
-    UnsupportedExpression { line: usize, col: usize, message: String },
+    UnsupportedExpression {
+        line: usize,
+        col: usize,
+        message: String,
+    },
     #[error("Missing required field: {0}")]
     MissingField(String),
     #[error("Invalid value for {field}: {message}")]
@@ -41,9 +49,10 @@ impl ConfigParser {
     }
 
     pub fn parse_string(&self, content: &str, filename: &str) -> Result<ConfigIR, ParseError> {
-        let source_file = self
-            .source_map
-            .new_source_file(Lrc::new(FileName::Custom(filename.to_string())), content.to_string());
+        let source_file = self.source_map.new_source_file(
+            Lrc::new(FileName::Custom(filename.to_string())),
+            content.to_string(),
+        );
 
         let lexer = Lexer::new(
             Syntax::Typescript(TsSyntax {
@@ -77,7 +86,9 @@ impl ConfigParser {
                 return self.eval_define_config(&export.expr);
             }
         }
-        Err(ParseError::MissingField("export default defineConfig(...)".to_string()))
+        Err(ParseError::MissingField(
+            "export default defineConfig(...)".to_string(),
+        ))
     }
 
     fn eval_define_config(&self, expr: &Expr) -> Result<ConfigIR, ParseError> {
@@ -221,7 +232,9 @@ impl ConfigParser {
             }
             return Ok(node);
         }
-        Err(ParseError::MissingField("opt() requires an argument".to_string()))
+        Err(ParseError::MissingField(
+            "opt() requires an argument".to_string(),
+        ))
     }
 
     fn eval_param(&self, call: &CallExpr) -> Result<LayoutNode, ParseError> {
@@ -285,7 +298,9 @@ impl ConfigParser {
         };
 
         if call.args.len() <= child_idx {
-            return Err(ParseError::MissingField("many() requires a child argument".to_string()));
+            return Err(ParseError::MissingField(
+                "many() requires a child argument".to_string(),
+            ));
         }
 
         let child = self.eval_layout_node(&call.args[child_idx].expr)?;
@@ -306,7 +321,10 @@ impl ConfigParser {
             "any" => Ok(CaseStyle::Any),
             _ => Err(ParseError::InvalidValue {
                 field: "case".to_string(),
-                message: format!("expected 'kebab', 'snake', 'camel', 'pascal', or 'any', got '{}'", s),
+                message: format!(
+                    "expected 'kebab', 'snake', 'camel', 'pascal', or 'any', got '{}'",
+                    s
+                ),
             }),
         }
     }

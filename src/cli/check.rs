@@ -52,11 +52,7 @@ impl CheckCommand {
             walker.walk_and_process(|path| matcher.check_path(path))
         };
 
-        all_violations.sort_by(|a, b| {
-            a.path
-                .cmp(&b.path)
-                .then_with(|| a.rule_id.cmp(&b.rule_id))
-        });
+        all_violations.sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.rule_id.cmp(&b.rule_id)));
 
         let reporter = create_reporter(output_format);
         let output = reporter.report(&all_violations);

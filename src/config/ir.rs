@@ -1,17 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
+    #[default]
     Strict,
     Warn,
-}
-
-impl Default for Mode {
-    fn default() -> Self {
-        Self::Strict
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -37,7 +32,8 @@ impl CaseStyle {
 
     fn is_kebab_case(s: &str) -> bool {
         !s.is_empty()
-            && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            && s.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
             && !s.starts_with('-')
             && !s.ends_with('-')
             && !s.contains("--")
@@ -45,7 +41,8 @@ impl CaseStyle {
 
     fn is_snake_case(s: &str) -> bool {
         !s.is_empty()
-            && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+            && s.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
             && !s.starts_with('_')
             && !s.ends_with('_')
             && !s.contains("__")
@@ -258,13 +255,31 @@ mod tests {
     #[test]
     fn test_layout_node_builders() {
         let file = LayoutNode::file();
-        assert!(matches!(file, LayoutNode::File { pattern: None, optional: false }));
+        assert!(matches!(
+            file,
+            LayoutNode::File {
+                pattern: None,
+                optional: false
+            }
+        ));
 
         let optional_file = LayoutNode::file().optional();
-        assert!(matches!(optional_file, LayoutNode::File { pattern: None, optional: true }));
+        assert!(matches!(
+            optional_file,
+            LayoutNode::File {
+                pattern: None,
+                optional: true
+            }
+        ));
 
         let dir = LayoutNode::dir(HashMap::new());
-        assert!(matches!(dir, LayoutNode::Dir { optional: false, .. }));
+        assert!(matches!(
+            dir,
+            LayoutNode::Dir {
+                optional: false,
+                ..
+            }
+        ));
     }
 
     #[test]

@@ -114,7 +114,10 @@ impl InspectCommand {
                     println!("Rule: {}", rule_id);
                     println!();
                     println!("  Description: {}", rule_info.description);
-                    println!("  Auto-fix: {}", if rule_info.auto_fix { "yes" } else { "no" });
+                    println!(
+                        "  Auto-fix: {}",
+                        if rule_info.auto_fix { "yes" } else { "no" }
+                    );
                     if !rule_info.examples.is_empty() {
                         println!();
                         println!("  Examples:");
@@ -125,7 +128,10 @@ impl InspectCommand {
                 }
             }
             InspectType::Deps { path } => {
-                println!("Dependency inspection for '{}' is not yet implemented.", path);
+                println!(
+                    "Dependency inspection for '{}' is not yet implemented.",
+                    path
+                );
                 println!("This feature will be available in M4.");
             }
         }
@@ -149,16 +155,27 @@ impl InspectCommand {
 
                 for (i, (name, child)) in sorted_children.iter().enumerate() {
                     let is_last_child = i == sorted_children.len() - 1;
-                    let child_connector = if is_last_child { "└── " } else { "├── " };
+                    let child_connector = if is_last_child {
+                        "└── "
+                    } else {
+                        "├── "
+                    };
                     let child_extension = if is_last_child { "    " } else { "│   " };
 
                     print!("{}{}{}", prefix, child_connector, name);
-                    Self::print_layout_tree(child, &format!("{}{}", prefix, child_extension), is_last_child);
+                    Self::print_layout_tree(
+                        child,
+                        &format!("{}{}", prefix, child_extension),
+                        is_last_child,
+                    );
                 }
             }
             crate::config::LayoutNode::File { pattern, optional } => {
                 let opt = if *optional { " (opt)" } else { "" };
-                let pat = pattern.as_ref().map(|p| format!(" [{}]", p)).unwrap_or_default();
+                let pat = pattern
+                    .as_ref()
+                    .map(|p| format!(" [{}]", p))
+                    .unwrap_or_default();
                 println!("{}{}", pat, opt);
             }
             crate::config::LayoutNode::Param { name, case, child } => {
@@ -166,7 +183,10 @@ impl InspectCommand {
                 Self::print_layout_tree(child, &format!("{}    ", prefix), true);
             }
             crate::config::LayoutNode::Many { case, child } => {
-                let case_str = case.as_ref().map(|c| format!(", case: {:?}", c)).unwrap_or_default();
+                let case_str = case
+                    .as_ref()
+                    .map(|c| format!(", case: {:?}", c))
+                    .unwrap_or_default();
                 println!(" [many{}]", case_str);
                 Self::print_layout_tree(child, &format!("{}    ", prefix), true);
             }
@@ -186,7 +206,8 @@ impl InspectCommand {
             },
             "forbidPaths" => RuleInfo {
                 id: "forbidPaths".to_string(),
-                description: "Forbids files/directories matching specified glob patterns".to_string(),
+                description: "Forbids files/directories matching specified glob patterns"
+                    .to_string(),
                 auto_fix: false,
                 examples: vec![
                     "**/utils/** - forbid utils directories".to_string(),

@@ -85,11 +85,8 @@ impl Reporter for ConsoleReporter {
 
         let mut output = String::new();
         let mut sorted_violations: Vec<_> = violations.iter().collect();
-        sorted_violations.sort_by(|a, b| {
-            a.path
-                .cmp(&b.path)
-                .then_with(|| a.rule_id.cmp(&b.rule_id))
-        });
+        sorted_violations
+            .sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.rule_id.cmp(&b.rule_id)));
 
         for violation in sorted_violations {
             output.push_str(&self.format_violation(violation));
@@ -111,7 +108,11 @@ impl Reporter for ConsoleReporter {
                 error_count,
                 if error_count == 1 { "error" } else { "errors" },
                 warning_count,
-                if warning_count == 1 { "warning" } else { "warnings" }
+                if warning_count == 1 {
+                    "warning"
+                } else {
+                    "warnings"
+                }
             )
             .bold()
             .to_string()
@@ -121,7 +122,11 @@ impl Reporter for ConsoleReporter {
                 error_count,
                 if error_count == 1 { "error" } else { "errors" },
                 warning_count,
-                if warning_count == 1 { "warning" } else { "warnings" }
+                if warning_count == 1 {
+                    "warning"
+                } else {
+                    "warnings"
+                }
             )
         };
 

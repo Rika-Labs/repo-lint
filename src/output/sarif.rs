@@ -95,16 +95,10 @@ struct SarifArtifactLocation {
 impl Reporter for SarifReporter {
     fn report(&self, violations: &[Violation]) -> String {
         let mut sorted_violations: Vec<_> = violations.iter().collect();
-        sorted_violations.sort_by(|a, b| {
-            a.path
-                .cmp(&b.path)
-                .then_with(|| a.rule_id.cmp(&b.rule_id))
-        });
+        sorted_violations
+            .sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.rule_id.cmp(&b.rule_id)));
 
-        let mut rule_ids: Vec<String> = violations
-            .iter()
-            .map(|v| v.rule_id.to_string())
-            .collect();
+        let mut rule_ids: Vec<String> = violations.iter().map(|v| v.rule_id.to_string()).collect();
         rule_ids.sort();
         rule_ids.dedup();
 
@@ -178,7 +172,7 @@ mod tests {
     #[test]
     fn test_sarif_reporter_with_violations() {
         use compact_str::CompactString;
-        
+
         let reporter = SarifReporter::new();
         let violations = vec![Violation {
             path: CompactString::new("src/utils/helper.ts"),

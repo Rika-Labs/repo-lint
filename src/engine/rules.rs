@@ -29,7 +29,7 @@ impl CompiledRules {
         let forbid_names_lower: Vec<CompactString> = config
             .forbid_names
             .iter()
-            .map(|n| CompactString::new(&n.to_lowercase()))
+            .map(|n| CompactString::new(n.to_lowercase()))
             .collect();
 
         Ok(Self {
@@ -95,11 +95,11 @@ impl CompiledRules {
                     let forbidden_bytes = forbidden_lower.as_bytes();
                     let forbidden_len = forbidden_bytes.len();
 
-                    let stem_match = stem_end == forbidden_len 
-                        && stem_lower.as_bytes() == forbidden_bytes;
+                    let stem_match =
+                        stem_end == forbidden_len && stem_lower.as_bytes() == forbidden_bytes;
 
-                    let full_match = name_len == forbidden_len
-                        && name_lower.as_bytes() == forbidden_bytes;
+                    let full_match =
+                        name_len == forbidden_len && name_lower.as_bytes() == forbidden_bytes;
 
                     if stem_match || full_match {
                         violations.push(RuleViolation::ForbiddenName {
@@ -164,10 +164,17 @@ impl RuleViolation {
 
     pub fn message(&self) -> String {
         match self {
-            RuleViolation::ForbiddenPath { matched_patterns, .. } => {
-                format!("path matches forbidden pattern: {}", matched_patterns.join(", "))
+            RuleViolation::ForbiddenPath {
+                matched_patterns, ..
+            } => {
+                format!(
+                    "path matches forbidden pattern: {}",
+                    matched_patterns.join(", ")
+                )
             }
-            RuleViolation::ForbiddenName { name, forbidden, .. } => {
+            RuleViolation::ForbiddenName {
+                name, forbidden, ..
+            } => {
                 format!("'{}' matches forbidden name '{}'", name, forbidden)
             }
         }
@@ -177,7 +184,6 @@ impl RuleViolation {
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     #[test]
     fn test_forbid_paths() {

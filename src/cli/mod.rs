@@ -13,7 +13,9 @@ use clap::{Parser, Subcommand};
 #[command(author = "Rika Labs")]
 #[command(version)]
 #[command(about = "A high-performance filesystem layout linter")]
-#[command(long_about = "repo-lint enforces filesystem structure, naming conventions, and module boundaries via a TypeScript DSL config.")]
+#[command(
+    long_about = "repo-lint enforces filesystem structure, naming conventions, and module boundaries via a TypeScript DSL config."
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
