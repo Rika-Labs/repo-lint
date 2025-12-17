@@ -87,9 +87,21 @@ impl ConfigParser {
     }
 
     fn extract_config(&self, module: &Module) -> Result<ConfigIR, ParseError> {
+        let mut variables: HashMap<String, &Expr> = HashMap::new();
+        for item in &module.body {
+            if let ModuleItem::Stmt(Stmt::Decl(Decl::Var(var_decl))) = item {
+                for decl in &var_decl.decls {
+                    if let Pat::Ident(ident) = &decl.name {
+                        if let Some(init) = &decl.init {
+                            variables.insert(ident.sym.to_string(), init.as_ref());
+                        }
+                    }
+                }
+            }
+        }
         for item in &module.body {
             if let ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(export)) = item {
-                return self.eval_define_config(&export.expr);
+                return self.eval_define_config(&export.expr, &variables);
             }
         }
         Err(ParseError::MissingField(
@@ -97,13 +109,17 @@ impl ConfigParser {
         ))
     }
 
-    fn eval_define_config(&self, expr: &Expr) -> Result<ConfigIR, ParseError> {
+    fn eval_define_config(
+        &self,
+        expr: &Expr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<ConfigIR, ParseError> {
         if let Expr::Call(call) = expr {
             if let Callee::Expr(callee_expr) = &call.callee {
                 if let Expr::Ident(ident) = &**callee_expr {
                     if ident.sym.as_ref() == "defineConfig" {
                         if let Some(arg) = call.args.first() {
-                            return self.eval_config_object(&arg.expr);
+                            return self.eval_config_object(&arg.expr, variables);
                         }
                     }
                 }
@@ -117,7 +133,11 @@ impl ConfigParser {
         })
     }
 
-    fn eval_config_object(&self, expr: &Expr) -> Result<ConfigIR, ParseError> {
+    fn eval_config_object(
+        &self,
+        expr: &Expr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<ConfigIR, ParseError> {
         let obj = self.expect_object(expr)?;
 
         let mut mode = Mode::default();
@@ -134,7 +154,7 @@ impl ConfigParser {
                     let key = self.get_prop_name(&kv.key)?;
                     match key.as_str() {
                         "mode" => mode = self.eval_mode(&kv.value)?,
-                        "layout" => layout = Some(self.eval_layout_node(&kv.value)?),
+                        "layout" => layout = Some(self.eval_layout_node(&kv.value, variables)?),
                         "rules" => rules = self.eval_rules(&kv.value)?,
                         "boundaries" => boundaries = Some(self.eval_boundaries(&kv.value)?),
                         "deps" => deps = Some(self.eval_deps(&kv.value)?),
@@ -171,19 +191,35 @@ impl ConfigParser {
         }
     }
 
-    fn eval_layout_node(&self, expr: &Expr) -> Result<LayoutNode, ParseError> {
+    fn eval_layout_node(
+        &self,
+        expr: &Expr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<LayoutNode, ParseError> {
+        if let Expr::Ident(ident) = expr {
+            let var_name = ident.sym.as_ref();
+            if let Some(var_expr) = variables.get(var_name) {
+                return self.eval_layout_node(var_expr, variables);
+            }
+            let loc = self.get_expr_location(expr);
+            return Err(ParseError::UnsupportedExpression {
+                line: loc.0,
+                col: loc.1,
+                message: format!("Unknown variable: {}", var_name),
+            });
+        }
         if let Expr::Call(call) = expr {
             if let Callee::Expr(callee_expr) = &call.callee {
                 if let Expr::Ident(ident) = &**callee_expr {
                     let fn_name = ident.sym.as_ref();
                     return match fn_name {
-                        "dir" => self.eval_dir(call),
+                        "dir" => self.eval_dir(call, variables),
                         "file" => self.eval_file(call),
-                        "opt" => self.eval_opt(call),
-                        "param" => self.eval_param(call),
-                        "many" => self.eval_many(call),
-                        "recursive" => self.eval_recursive(call),
-                        "either" => self.eval_either(call),
+                        "opt" => self.eval_opt(call, variables),
+                        "param" => self.eval_param(call, variables),
+                        "many" => self.eval_many(call, variables),
+                        "recursive" => self.eval_recursive(call, variables),
+                        "either" => self.eval_either(call, variables),
                         _ => {
                             let loc = self.get_expr_location(expr);
                             Err(ParseError::UnsupportedExpression {
@@ -204,7 +240,11 @@ impl ConfigParser {
         })
     }
 
-    fn eval_dir(&self, call: &CallExpr) -> Result<LayoutNode, ParseError> {
+    fn eval_dir(
+        &self,
+        call: &CallExpr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<LayoutNode, ParseError> {
         let mut children = HashMap::new();
         if let Some(arg) = call.args.first() {
             let obj = self.expect_object(&arg.expr)?;
@@ -212,7 +252,7 @@ impl ConfigParser {
                 if let PropOrSpread::Prop(prop) = prop {
                     if let Prop::KeyValue(kv) = &**prop {
                         let key = self.get_prop_name(&kv.key)?;
-                        let value = self.eval_layout_node(&kv.value)?;
+                        let value = self.eval_layout_node(&kv.value, variables)?;
                         children.insert(key, value);
                     }
                 }
@@ -236,9 +276,13 @@ impl ConfigParser {
         })
     }
 
-    fn eval_opt(&self, call: &CallExpr) -> Result<LayoutNode, ParseError> {
+    fn eval_opt(
+        &self,
+        call: &CallExpr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<LayoutNode, ParseError> {
         if let Some(arg) = call.args.first() {
-            let mut node = self.eval_layout_node(&arg.expr)?;
+            let mut node = self.eval_layout_node(&arg.expr, variables)?;
             match &mut node {
                 LayoutNode::Dir { optional, .. } => *optional = true,
                 LayoutNode::File { optional, .. } => *optional = true,
@@ -251,7 +295,11 @@ impl ConfigParser {
         ))
     }
 
-    fn eval_param(&self, call: &CallExpr) -> Result<LayoutNode, ParseError> {
+    fn eval_param(
+        &self,
+        call: &CallExpr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<LayoutNode, ParseError> {
         if call.args.len() < 2 {
             return Err(ParseError::MissingField(
                 "param() requires options and child arguments".to_string(),
@@ -280,7 +328,7 @@ impl ConfigParser {
             name = opts_str.unwrap_or_else(|| "$param".to_string());
         }
 
-        let child = self.eval_layout_node(&call.args[1].expr)?;
+        let child = self.eval_layout_node(&call.args[1].expr, variables)?;
 
         Ok(LayoutNode::Param {
             name,
@@ -289,7 +337,11 @@ impl ConfigParser {
         })
     }
 
-    fn eval_many(&self, call: &CallExpr) -> Result<LayoutNode, ParseError> {
+    fn eval_many(
+        &self,
+        call: &CallExpr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<LayoutNode, ParseError> {
         let (case, child_idx) = if call.args.len() >= 2 {
             if let Ok(obj) = self.expect_object(&call.args[0].expr) {
                 let mut case = None;
@@ -317,7 +369,7 @@ impl ConfigParser {
             ));
         }
 
-        let child = self.eval_layout_node(&call.args[child_idx].expr)?;
+        let child = self.eval_layout_node(&call.args[child_idx].expr, variables)?;
 
         Ok(LayoutNode::Many {
             case,
@@ -325,7 +377,11 @@ impl ConfigParser {
         })
     }
 
-    fn eval_recursive(&self, call: &CallExpr) -> Result<LayoutNode, ParseError> {
+    fn eval_recursive(
+        &self,
+        call: &CallExpr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<LayoutNode, ParseError> {
         let (max_depth, child_idx) = if call.args.len() >= 2 {
             if let Ok(obj) = self.expect_object(&call.args[0].expr) {
                 let mut max_depth = 10usize;
@@ -353,7 +409,7 @@ impl ConfigParser {
             ));
         }
 
-        let child = self.eval_layout_node(&call.args[child_idx].expr)?;
+        let child = self.eval_layout_node(&call.args[child_idx].expr, variables)?;
 
         Ok(LayoutNode::Recursive {
             max_depth,
@@ -361,7 +417,11 @@ impl ConfigParser {
         })
     }
 
-    fn eval_either(&self, call: &CallExpr) -> Result<LayoutNode, ParseError> {
+    fn eval_either(
+        &self,
+        call: &CallExpr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<LayoutNode, ParseError> {
         if call.args.is_empty() {
             return Err(ParseError::MissingField(
                 "either() requires at least one variant".to_string(),
@@ -370,7 +430,7 @@ impl ConfigParser {
 
         let mut variants = Vec::new();
         for arg in &call.args {
-            let variant = self.eval_layout_node(&arg.expr)?;
+            let variant = self.eval_layout_node(&arg.expr, variables)?;
             variants.push(variant);
         }
 

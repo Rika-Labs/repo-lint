@@ -88,6 +88,7 @@ export default defineConfig({
         "mod.rs": file(),
         $test: many(file("*.rs")),
       })),
+      $test: many(file("*.rs")),
     })),
 
     "Cargo.toml": file(),

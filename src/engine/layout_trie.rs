@@ -440,12 +440,12 @@ impl LayoutMatcher {
             .filter_map(|c| c.as_os_str().to_str())
             .collect();
 
-        self.get_expected_at(&components, &self.root)
+        Self::get_expected_at(&components, &self.root)
     }
 
-    fn get_expected_at(&self, segments: &[&str], node: &LayoutNode) -> Vec<ExpectedChild> {
+    fn get_expected_at(segments: &[&str], node: &LayoutNode) -> Vec<ExpectedChild> {
         if segments.is_empty() {
-            return self.collect_expected(node);
+            return Self::collect_expected(node);
         }
 
         let current = segments[0];
@@ -454,21 +454,21 @@ impl LayoutMatcher {
         match node {
             LayoutNode::Dir { children, .. } => {
                 if let Some(child) = children.get(current) {
-                    return self.get_expected_at(remaining, child);
+                    return Self::get_expected_at(remaining, child);
                 }
                 for (key, child) in children {
                     if key.starts_with('$') {
-                        return self.get_expected_at(remaining, child);
+                        return Self::get_expected_at(remaining, child);
                     }
                 }
                 Vec::new()
             }
-            LayoutNode::Param { child, .. } => self.get_expected_at(remaining, child),
-            LayoutNode::Many { child, .. } => self.get_expected_at(remaining, child),
-            LayoutNode::Recursive { child, .. } => self.get_expected_at(remaining, child),
+            LayoutNode::Param { child, .. } => Self::get_expected_at(remaining, child),
+            LayoutNode::Many { child, .. } => Self::get_expected_at(remaining, child),
+            LayoutNode::Recursive { child, .. } => Self::get_expected_at(remaining, child),
             LayoutNode::Either { variants } => {
                 for variant in variants {
-                    let result = self.get_expected_at(remaining, variant);
+                    let result = Self::get_expected_at(remaining, variant);
                     if !result.is_empty() {
                         return result;
                     }
@@ -479,7 +479,7 @@ impl LayoutMatcher {
         }
     }
 
-    fn collect_expected(&self, node: &LayoutNode) -> Vec<ExpectedChild> {
+    fn collect_expected(node: &LayoutNode) -> Vec<ExpectedChild> {
         match node {
             LayoutNode::Dir { children, .. } => children
                 .iter()
@@ -496,10 +496,10 @@ impl LayoutMatcher {
                     is_param: name.starts_with('$'),
                 })
                 .collect(),
-            LayoutNode::Recursive { child, .. } => self.collect_expected(child),
+            LayoutNode::Recursive { child, .. } => Self::collect_expected(child),
             LayoutNode::Either { variants } => variants
                 .iter()
-                .flat_map(|v| self.collect_expected(v))
+                .flat_map(Self::collect_expected)
                 .collect(),
             _ => Vec::new(),
         }
