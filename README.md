@@ -6,14 +6,16 @@ A high-performance filesystem layout linter with TypeScript DSL config.
 
 ## Features
 
-- **TypeScript DSL Config**: Define filesystem structure using intuitive `dir`, `file`, `opt`, `param`, and `many` functions
-- **High Performance**: Built in Rust with parallel file walking (200k+ paths/sec)
-- **Strict Layout Enforcement**: Ensure your project structure matches your defined layout
+- **TypeScript DSL Config**: Define filesystem structure using `dir`, `file`, `opt`, `param`, `many`, `recursive`, and `either`
+- **High Performance**: Built in Rust with parallel file walking (~950k paths/sec)
+- **Recursive Matching**: Handle arbitrary-depth structures like Next.js App Router
+- **Framework Presets**: Ready-to-use layouts for Next.js and more
 - **Naming Convention Rules**: Enforce kebab-case, snake_case, camelCase, or PascalCase
 - **Forbidden Paths/Names**: Block unwanted patterns like `**/utils/**` or temporary files
+- **Ignore Paths**: Skip directories entirely (honors .gitignore by default)
 - **Multiple Output Formats**: Console, JSON, and SARIF (for GitHub Code Scanning)
-- **Agent-Friendly**: `--agent` and `--trace` flags for AI/automation integration
-- **Scaffolding**: Generate compliant module structures automatically
+- **Better Error Messages**: See exactly which patterns were tried when matching fails
+- **Scoped Validation**: Lint only a subtree with `--scope`
 
 ## Installation
 
@@ -40,32 +42,51 @@ This installs both the TypeScript types (for config autocomplete) and the CLI bi
 1. Create a `repo-lint.config.ts` file:
 
 ```typescript
-import { defineConfig, dir, file, opt, param, many } from "@rikalabs/repo-lint";
+import { defineConfig, dir, file, opt, param, many, recursive } from "@rikalabs/repo-lint";
 
 export default defineConfig({
   mode: "strict",
 
   layout: dir({
     src: dir({
-      services: dir({
-        $module: param({ case: "kebab" }, dir({
-          api: dir({
-            "index.ts": file(),
-          }),
-          domain: dir({
-            entities: dir({ $any: many(file("*.ts")) }),
-          }),
-          "README.md": opt(file()),
-        })),
+      app: dir({
+        // Recursive matching for Next.js App Router routes
+        $routes: recursive(
+          param({ case: "kebab" }, dir({
+            "page.tsx": opt(file()),
+            "layout.tsx": opt(file()),
+            "loading.tsx": opt(file()),
+          }))
+        ),
       }),
+      components: opt(dir({
+        $component: many({ case: "pascal" }, dir({
+          "index.tsx": file(),
+        })),
+      })),
     }),
-    tests: opt(dir({})),
   }),
 
+  // Ignore these directories entirely
+  ignore: [".git", "node_modules", ".next"],
+
   rules: {
-    forbidPaths: ["**/utils/**", "**/*.bak"],
-    forbidNames: ["temp", "new", "copy"],
+    forbidPaths: ["**/utils/**"],
+    forbidNames: ["temp", "new"],
+    ignorePaths: ["**/.turbo/**", "**/dist/**"],
   },
+});
+```
+
+Or use a preset for common frameworks:
+
+```typescript
+import { defineConfig, nextjsAppRouter, nextjsDefaultIgnore } from "@rikalabs/repo-lint";
+
+export default defineConfig({
+  mode: "strict",
+  layout: nextjsAppRouter({ routeCase: "kebab" }),
+  ignore: nextjsDefaultIgnore(),
 });
 ```
 
@@ -82,13 +103,11 @@ repo-lint check
 Check your project structure against the config.
 
 ```bash
-repo-lint check                    # Full check
-repo-lint check --changed          # Only changed files (PR-fast)
-repo-lint check --json             # JSON output
-repo-lint check --sarif            # SARIF output for GitHub
-repo-lint check --fix              # Auto-fix safe moves/renames
-repo-lint check --agent            # Enhanced debugging for AI agents
-repo-lint check --trace            # Show rule-by-rule matching
+repo-lint check                        # Full check
+repo-lint check --scope apps/web       # Only validate a subtree
+repo-lint check --changed              # Only changed files (git diff)
+repo-lint check --json                 # JSON output
+repo-lint check --sarif                # SARIF output for GitHub
 ```
 
 ### `repo-lint scaffold`
@@ -123,6 +142,8 @@ repo-lint inspect deps src/foo.ts              # Show import dependencies (M4)
 | `opt(node)` | Mark a node as optional |
 | `param(opts, node)` | Dynamic segment with naming constraints |
 | `many(opts, node)` | Allow multiple matches |
+| `recursive(opts?, node)` | Match arbitrary depth (e.g., Next.js routes) |
+| `either(...nodes)` | Match any of the variants (first match wins) |
 
 ### Case Styles
 
@@ -132,14 +153,58 @@ repo-lint inspect deps src/foo.ts              # Show import dependencies (M4)
 - `pascal`: MyModuleName
 - `any`: No restriction
 
-### Rules
+### Config Options
 
 ```typescript
-rules: {
-  forbidPaths: ["**/utils/**", "**/*.{bak,tmp}"],
-  forbidNames: ["new", "final", "copy", "tmp"],
-}
+export default defineConfig({
+  mode: "strict",           // "strict" (errors) or "warn" (warnings only)
+  layout: dir({...}),       // Your layout definition
+  ignore: [".git", "node_modules"],  // Directories to skip entirely
+  useGitignore: true,       // Honor .gitignore files (default: true)
+  rules: {
+    forbidPaths: ["**/utils/**"],    // Error if path matches
+    forbidNames: ["temp", "new"],    // Error if filename matches
+    ignorePaths: ["**/.turbo/**"],   // Skip silently (no error)
+  },
+});
 ```
+
+### Presets
+
+#### Next.js App Router
+
+The `nextjsAppRouter` preset provides a complete layout for Next.js 13+ App Router projects:
+
+```typescript
+import { defineConfig, nextjsAppRouter, nextjsDefaultIgnore, nextjsDefaultIgnorePaths } from "@rikalabs/repo-lint";
+
+export default defineConfig({
+  layout: nextjsAppRouter({ 
+    routeCase: "kebab",  // Route segment naming (default: "kebab")
+    maxDepth: 10,        // Max nesting depth for routes (default: 10)
+  }),
+  ignore: nextjsDefaultIgnore(),
+  rules: {
+    ignorePaths: nextjsDefaultIgnorePaths(),
+  },
+});
+```
+
+**What's included:**
+
+- **Recursive route matching** - Routes can nest to any depth (`app/dashboard/settings/profile/page.tsx`)
+- **All route file conventions** - `page.tsx`, `layout.tsx`, `loading.tsx`, `error.tsx`, `not-found.tsx`, `template.tsx`, `route.ts`, etc.
+- **Both `src/app` and `app`** - Supports either project structure
+- **Components** - PascalCase component directories with `index.tsx`
+- **Common directories** - `lib/`, `hooks/`, `styles/`, `public/`
+- **Config files** - `next.config.js`, `tailwind.config.js`, `tsconfig.json`, etc.
+
+**Helper functions:**
+
+| Function | Returns |
+|----------|---------|
+| `nextjsDefaultIgnore()` | `[".next", "node_modules", ".turbo", "out", ".vercel"]` |
+| `nextjsDefaultIgnorePaths()` | `["**/.next/**", "**/node_modules/**", "**/.turbo/**", ...]` |
 
 ### Boundaries (M4)
 
