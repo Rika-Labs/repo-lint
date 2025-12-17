@@ -50,7 +50,7 @@ impl ConfigDiscovery {
                 let workspace_root = path.parent().unwrap_or(path).to_path_buf();
                 let relative_path = workspace_root
                     .strip_prefix(&self.root)
-                    .map(|p| p.to_string_lossy().to_string())
+                    .map(|p| p.to_string_lossy().replace('\\', "/"))
                     .unwrap_or_default();
 
                 configs.push(DiscoveredConfig {
@@ -83,7 +83,7 @@ impl ConfigDiscovery {
                     let workspace_root = entry.parent().unwrap_or(&entry).to_path_buf();
                     let relative_path = workspace_root
                         .strip_prefix(&self.root)
-                        .map(|p| p.to_string_lossy().to_string())
+                        .map(|p| p.to_string_lossy().replace('\\', "/"))
                         .unwrap_or_default();
 
                     if !configs.iter().any(|c| c.config_path == entry) {

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2024-12-17
+
+### Fixed
+
+- Fixed Windows path separator handling in config discovery (backslash → forward slash)
+- Fixed cargo fmt issues in post_validator.rs
+
 ## [0.3.0] - 2024-12-17
 
 ### Added

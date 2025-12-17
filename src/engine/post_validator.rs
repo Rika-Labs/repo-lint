@@ -69,11 +69,7 @@ impl<'a> PostValidator<'a> {
         violations
     }
 
-    fn collect_required_paths(
-        node: &LayoutNode,
-        current_path: PathBuf,
-        paths: &mut Vec<PathBuf>,
-    ) {
+    fn collect_required_paths(node: &LayoutNode, current_path: PathBuf, paths: &mut Vec<PathBuf>) {
         match node {
             LayoutNode::Dir {
                 children, required, ..
@@ -261,10 +257,8 @@ impl<'a> PostValidator<'a> {
         let source_base = source_pattern.replace('*', "");
         let target_base = target_pattern.replace('*', "");
 
-        let mut target = source.replace(
-            source_base.trim_matches('/'),
-            target_base.trim_matches('/'),
-        );
+        let mut target =
+            source.replace(source_base.trim_matches('/'), target_base.trim_matches('/'));
 
         if from_ext != "*" && to_ext != "*" {
             let from_suffix = from_ext.trim_start_matches('*');
