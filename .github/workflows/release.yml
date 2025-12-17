@@ -32,7 +32,7 @@ jobs:
             name: repo-lint-linux-arm64
             cross: true
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-latest
             name: repo-lint-darwin-x64
             cross: false
           - target: aarch64-apple-darwin
