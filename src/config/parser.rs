@@ -81,58 +81,57 @@ impl ConfigParser {
                 }
                 current = d.parent();
             }
-            let mut path = root.join(&specifier[2..]);
-            if !path.exists() && path.extension().is_none() {
-                path.set_extension("ts");
-            }
-            if path.exists() {
+            if let Some(path) = self.resolve_path(&root.join(&specifier[2..])) {
                 return Some(path);
             }
         }
 
         // Try relative path
         if specifier.starts_with('.') {
-            let mut path = dir.join(specifier);
-            if !path.exists() && path.extension().is_none() {
-                path.set_extension("ts");
-            }
-            if path.exists() {
+            if let Some(path) = self.resolve_path(&dir.join(specifier)) {
                 return Some(path);
-            }
-            // Try index.ts if it's a directory
-            let dir_path = dir.join(specifier);
-            if dir_path.is_dir() {
-                let index_path = dir_path.join("index.ts");
-                if index_path.exists() {
-                    return Some(index_path);
-                }
             }
         }
 
-        // Try node_modules (basic)
+        // Try node_modules (search upwards)
         let mut current_dir = Some(dir);
         while let Some(d) = current_dir {
             let node_modules = d.join("node_modules");
             if node_modules.exists() {
-                let pkg_path = node_modules.join(specifier);
-                let mut path = pkg_path.clone();
-                if !path.exists() && path.extension().is_none() {
-                    path.set_extension("ts");
-                }
-                if path.exists() {
+                if let Some(path) = self.resolve_path(&node_modules.join(specifier)) {
                     return Some(path);
-                }
-                // Try package.json main if it's a directory
-                if pkg_path.is_dir() {
-                    let config_path = pkg_path.join("repo-lint.config.ts");
-                    if config_path.exists() {
-                        return Some(config_path);
-                    }
                 }
             }
             current_dir = d.parent();
         }
 
+        None
+    }
+
+    fn resolve_path(&self, path: &Path) -> Option<PathBuf> {
+        // 1. Direct path
+        if path.exists() && path.is_file() {
+            return Some(path.to_path_buf());
+        }
+        // 2. Add .ts extension
+        let mut with_ext = path.to_path_buf();
+        if with_ext.extension().is_none() {
+            with_ext.set_extension("ts");
+            if with_ext.exists() && with_ext.is_file() {
+                return Some(with_ext);
+            }
+        }
+        // 3. Directory index/config
+        if path.is_dir() {
+            let index = path.join("index.ts");
+            if index.exists() && index.is_file() {
+                return Some(index);
+            }
+            let config = path.join("repo-lint.config.ts");
+            if config.exists() && config.is_file() {
+                return Some(config);
+            }
+        }
         None
     }
 

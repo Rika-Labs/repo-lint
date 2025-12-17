@@ -77,28 +77,28 @@ export default defineConfig({
 }
 
 #[test]
-fn test_import_shared_layout() {
+fn test_import_scoped_package() {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
 
-    let shared_lib = r#"
+    let pkg_dir = root.join("node_modules/@intimetec/config/repo-lint");
+    fs::create_dir_all(&pkg_dir).unwrap();
+
+    let shared_config = r#"
 import { dir, file } from "repo-lint";
-export const nextjsAppLayout = dir({
-    app: dir({
-        "layout.tsx": file(),
-        "page.tsx": file(),
-    })
-});
+export const baseLayout = dir({ "package.json": file() });
 "#;
-    fs::write(root.join("shared.ts"), shared_lib).unwrap();
+    fs::write(pkg_dir.join("nextjs.ts"), shared_config).unwrap();
 
     let config_content = r#"
 import { defineConfig, dir } from "repo-lint";
-import { nextjsAppLayout } from "./shared";
+import { baseLayout } from "@intimetec/config/repo-lint/nextjs";
 
 export default defineConfig({
     layout: dir({
-        src: nextjsAppLayout,
+        apps: dir({
+            $app: baseLayout,
+        })
     })
 });
 "#;
@@ -109,12 +109,7 @@ export default defineConfig({
     let config = parser.parse_file(&config_path).unwrap();
 
     if let Some(repo_lint::config::LayoutNode::Dir { children, .. }) = &config.layout {
-        assert!(children.contains_key("src"));
-        if let Some(repo_lint::config::LayoutNode::Dir { children: src_children, .. }) = children.get("src") {
-            assert!(src_children.contains_key("app"));
-        } else {
-            panic!("Expected src to be a directory");
-        }
+        assert!(children.contains_key("apps"));
     } else {
         panic!("Expected root to be a directory");
     }
