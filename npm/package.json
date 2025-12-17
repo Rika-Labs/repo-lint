@@ -5,11 +5,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rika-labs/repo-lint"
+    "url": "https://github.com/Rika-Labs/repo-lint"
   },
-  "homepage": "https://github.com/rika-labs/repo-lint",
+  "homepage": "https://github.com/Rika-Labs/repo-lint",
   "bugs": {
-    "url": "https://github.com/rika-labs/repo-lint/issues"
+    "url": "https://github.com/Rika-Labs/repo-lint/issues"
   },
   "keywords": [
     "linter",
