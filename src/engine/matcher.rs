@@ -1,7 +1,7 @@
 use compact_str::CompactString;
 use std::path::Path;
 
-use super::layout_trie::{LayoutMatcher, MatchResult};
+use super::layout_trie::{LayoutMatcher, MatchAttempt, MatchResult};
 use super::rules::CompiledRules;
 use crate::config::ConfigIR;
 
@@ -12,6 +12,7 @@ pub struct Violation {
     pub message: CompactString,
     pub severity: Severity,
     pub fix_suggestion: Option<CompactString>,
+    pub attempts: Vec<MatchAttempt>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,7 +49,15 @@ impl FileMatcher {
         })
     }
 
+    pub fn is_ignored(&self, path: &Path) -> bool {
+        self.rules.is_ignored(path)
+    }
+
     pub fn check_path(&self, path: &Path) -> Vec<Violation> {
+        if self.rules.is_ignored(path) {
+            return Vec::new();
+        }
+
         let mut violations = Vec::new();
         let severity = if self.strict_mode {
             Severity::Error
@@ -66,6 +75,7 @@ impl FileMatcher {
                 message: CompactString::new(rv.message()),
                 severity,
                 fix_suggestion: None,
+                attempts: Vec::new(),
             });
         }
 
@@ -74,16 +84,17 @@ impl FileMatcher {
             MatchResult::Allowed
             | MatchResult::AllowedParam { .. }
             | MatchResult::AllowedMany { .. } => {}
-            MatchResult::Denied { reason } => {
+            MatchResult::Denied { reason, attempts } => {
                 violations.push(Violation {
                     path: path_str.clone(),
                     rule_id: CompactString::const_new("layout"),
                     message: CompactString::new(&reason),
                     severity,
                     fix_suggestion: None,
+                    attempts,
                 });
             }
-            MatchResult::NotInLayout { nearest_valid } => {
+            MatchResult::NotInLayout { nearest_valid, attempts } => {
                 let msg = if let Some(nearest) = nearest_valid {
                     format!("path not defined in layout (nearest valid: {})", nearest)
                 } else {
@@ -95,6 +106,7 @@ impl FileMatcher {
                     message: CompactString::new(&msg),
                     severity,
                     fix_suggestion: None,
+                    attempts,
                 });
             }
             MatchResult::MissingRequired { expected } => {
@@ -107,6 +119,7 @@ impl FileMatcher {
                     )),
                     severity,
                     fix_suggestion: None,
+                    attempts: Vec::new(),
                 });
             }
         }
@@ -177,9 +190,12 @@ mod tests {
             rules: RulesConfig {
                 forbid_paths: vec!["**/utils/**".to_string()],
                 forbid_names: vec!["temp".to_string()],
+                ignore_paths: vec![],
             },
             boundaries: None,
             deps: None,
+            ignore: vec![],
+            use_gitignore: true,
         }
     }
 

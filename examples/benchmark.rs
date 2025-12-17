@@ -48,9 +48,12 @@ fn create_test_config() -> ConfigIR {
         rules: RulesConfig {
             forbid_paths: vec!["**/utils/**".to_string(), "**/*.bak".to_string()],
             forbid_names: vec!["temp".to_string(), "new".to_string()],
+            ignore_paths: vec![],
         },
         boundaries: None,
         deps: None,
+        ignore: vec![],
+        use_gitignore: true,
     }
 }
 

@@ -19,6 +19,9 @@ pub struct CheckArgs {
 
     #[arg(long)]
     pub fix: bool,
+
+    #[arg(long, help = "Only validate paths under this scope (e.g., apps/sentinel)")]
+    pub scope: Option<String>,
 }
 
 pub struct CheckCommand;
@@ -40,16 +43,44 @@ impl CheckCommand {
         let config = parser.parse_file(&config_file)?;
 
         let matcher = FileMatcher::new(&config)?;
-        let walker = Walker::new(&args.path);
+        let mut walker = Walker::new(&args.path).respect_gitignore(config.use_gitignore);
+
+        for ignore_pattern in &config.ignore {
+            walker = walker.add_ignore(ignore_pattern);
+        }
+
+        let scope_prefix = args.scope.as_ref().map(|s| {
+            let mut p = s.clone();
+            if !p.ends_with('/') {
+                p.push('/');
+            }
+            p
+        });
 
         let mut all_violations: Vec<Violation> = if args.changed {
             let entries = walker.walk_changed(&args.base)?;
             entries
                 .par_iter()
+                .filter(|entry| {
+                    if let Some(ref prefix) = scope_prefix {
+                        entry.relative_path.to_string_lossy().starts_with(prefix)
+                            || entry.relative_path.to_string_lossy() == prefix.trim_end_matches('/')
+                    } else {
+                        true
+                    }
+                })
                 .flat_map(|entry| matcher.check_path(&entry.relative_path))
                 .collect()
         } else {
-            walker.walk_and_process(|path| matcher.check_path(path))
+            walker.walk_and_process(|path| {
+                if let Some(ref prefix) = scope_prefix {
+                    let path_str = path.to_string_lossy();
+                    if !path_str.starts_with(prefix) && path_str != prefix.trim_end_matches('/') {
+                        return Vec::new();
+                    }
+                }
+                matcher.check_path(path)
+            })
         };
 
         all_violations.sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.rule_id.cmp(&b.rule_id)));
@@ -109,6 +140,7 @@ export default defineConfig({
             changed: false,
             base: "HEAD".to_string(),
             fix: false,
+            scope: None,
         };
 
         let result = CheckCommand::run(

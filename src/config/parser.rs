@@ -119,6 +119,8 @@ impl ConfigParser {
         let mut rules = RulesConfig::default();
         let mut boundaries = None;
         let mut deps = None;
+        let mut ignore = Vec::new();
+        let mut use_gitignore = true;
 
         for prop in &obj.props {
             if let PropOrSpread::Prop(prop) = prop {
@@ -130,6 +132,8 @@ impl ConfigParser {
                         "rules" => rules = self.eval_rules(&kv.value)?,
                         "boundaries" => boundaries = Some(self.eval_boundaries(&kv.value)?),
                         "deps" => deps = Some(self.eval_deps(&kv.value)?),
+                        "ignore" => ignore = self.eval_string_array(&kv.value)?,
+                        "useGitignore" => use_gitignore = self.eval_bool(&kv.value)?,
                         _ => {}
                     }
                 }
@@ -144,6 +148,8 @@ impl ConfigParser {
             rules,
             boundaries,
             deps,
+            ignore,
+            use_gitignore,
         })
     }
 
@@ -170,6 +176,8 @@ impl ConfigParser {
                         "opt" => self.eval_opt(call),
                         "param" => self.eval_param(call),
                         "many" => self.eval_many(call),
+                        "recursive" => self.eval_recursive(call),
+                        "either" => self.eval_either(call),
                         _ => {
                             let loc = self.get_expr_location(expr);
                             Err(ParseError::UnsupportedExpression {
@@ -311,6 +319,58 @@ impl ConfigParser {
         })
     }
 
+    fn eval_recursive(&self, call: &CallExpr) -> Result<LayoutNode, ParseError> {
+        let (max_depth, child_idx) = if call.args.len() >= 2 {
+            if let Ok(obj) = self.expect_object(&call.args[0].expr) {
+                let mut max_depth = 10usize;
+                for prop in &obj.props {
+                    if let PropOrSpread::Prop(prop) = prop {
+                        if let Prop::KeyValue(kv) = &**prop {
+                            let key = self.get_prop_name(&kv.key)?;
+                            if key == "maxDepth" {
+                                max_depth = self.expect_number(&kv.value)? as usize;
+                            }
+                        }
+                    }
+                }
+                (max_depth, 1)
+            } else {
+                (10, 0)
+            }
+        } else {
+            (10, 0)
+        };
+
+        if call.args.len() <= child_idx {
+            return Err(ParseError::MissingField(
+                "recursive() requires a child argument".to_string(),
+            ));
+        }
+
+        let child = self.eval_layout_node(&call.args[child_idx].expr)?;
+
+        Ok(LayoutNode::Recursive {
+            max_depth,
+            child: Box::new(child),
+        })
+    }
+
+    fn eval_either(&self, call: &CallExpr) -> Result<LayoutNode, ParseError> {
+        if call.args.is_empty() {
+            return Err(ParseError::MissingField(
+                "either() requires at least one variant".to_string(),
+            ));
+        }
+
+        let mut variants = Vec::new();
+        for arg in &call.args {
+            let variant = self.eval_layout_node(&arg.expr)?;
+            variants.push(variant);
+        }
+
+        Ok(LayoutNode::Either { variants })
+    }
+
     fn eval_case_style(&self, expr: &Expr) -> Result<CaseStyle, ParseError> {
         let s = self.expect_string(expr)?;
         match s.as_str() {
@@ -340,6 +400,7 @@ impl ConfigParser {
                     match key.as_str() {
                         "forbidPaths" => rules.forbid_paths = self.eval_string_array(&kv.value)?,
                         "forbidNames" => rules.forbid_names = self.eval_string_array(&kv.value)?,
+                        "ignorePaths" => rules.ignore_paths = self.eval_string_array(&kv.value)?,
                         _ => {}
                     }
                 }
@@ -481,6 +542,22 @@ impl ConfigParser {
             line: loc.0,
             col: loc.1,
             message: "Expected boolean literal".to_string(),
+        })
+    }
+
+    fn eval_bool(&self, expr: &Expr) -> Result<bool, ParseError> {
+        self.expect_bool(expr)
+    }
+
+    fn expect_number(&self, expr: &Expr) -> Result<f64, ParseError> {
+        if let Expr::Lit(Lit::Num(n)) = expr {
+            return Ok(n.value);
+        }
+        let loc = self.get_expr_location(expr);
+        Err(ParseError::UnsupportedExpression {
+            line: loc.0,
+            col: loc.1,
+            message: "Expected number literal".to_string(),
         })
     }
 
@@ -742,5 +819,146 @@ export default defineConfig({ layout: dir({}) });
 "#;
         let result = parser.parse_string(config, "test.ts");
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_with_recursive() {
+        let parser = ConfigParser::new();
+        let config = r#"
+import { defineConfig, dir, file, param, recursive } from "repo-lint";
+
+export default defineConfig({
+    layout: dir({
+        app: dir({
+            $routes: recursive(param({ case: "kebab" }, dir({
+                "page.tsx": file(),
+            }))),
+        }),
+    }),
+});
+"#;
+        let result = parser.parse_string(config, "test.ts");
+        assert!(result.is_ok());
+        let ir = result.unwrap();
+        if let LayoutNode::Dir { children, .. } = &ir.layout {
+            if let Some(LayoutNode::Dir {
+                children: app_children,
+                ..
+            }) = children.get("app")
+            {
+                assert!(app_children.contains_key("$routes"));
+                if let Some(LayoutNode::Recursive { max_depth, .. }) = app_children.get("$routes") {
+                    assert_eq!(*max_depth, 10);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_with_recursive_custom_depth() {
+        let parser = ConfigParser::new();
+        let config = r#"
+import { defineConfig, dir, file, param, recursive } from "repo-lint";
+
+export default defineConfig({
+    layout: dir({
+        app: dir({
+            $routes: recursive({ maxDepth: 5 }, param({ case: "kebab" }, dir({
+                "page.tsx": file(),
+            }))),
+        }),
+    }),
+});
+"#;
+        let result = parser.parse_string(config, "test.ts");
+        assert!(result.is_ok());
+        let ir = result.unwrap();
+        if let LayoutNode::Dir { children, .. } = &ir.layout {
+            if let Some(LayoutNode::Dir {
+                children: app_children,
+                ..
+            }) = children.get("app")
+            {
+                if let Some(LayoutNode::Recursive { max_depth, .. }) = app_children.get("$routes") {
+                    assert_eq!(*max_depth, 5);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_with_either() {
+        let parser = ConfigParser::new();
+        let config = r#"
+import { defineConfig, dir, file, either } from "repo-lint";
+
+export default defineConfig({
+    layout: dir({
+        routes: dir({
+            $segment: either(
+                file("page.tsx"),
+                dir({ "index.ts": file() }),
+            ),
+        }),
+    }),
+});
+"#;
+        let result = parser.parse_string(config, "test.ts");
+        assert!(result.is_ok());
+        let ir = result.unwrap();
+        if let LayoutNode::Dir { children, .. } = &ir.layout {
+            if let Some(LayoutNode::Dir {
+                children: routes_children,
+                ..
+            }) = children.get("routes")
+            {
+                if let Some(LayoutNode::Either { variants }) = routes_children.get("$segment") {
+                    assert_eq!(variants.len(), 2);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_with_ignore_config() {
+        let parser = ConfigParser::new();
+        let config = r#"
+import { defineConfig, dir } from "repo-lint";
+
+export default defineConfig({
+    layout: dir({}),
+    ignore: [".git", "node_modules", ".next"],
+    useGitignore: false,
+});
+"#;
+        let result = parser.parse_string(config, "test.ts");
+        assert!(result.is_ok());
+        let ir = result.unwrap();
+        assert_eq!(ir.ignore, vec![".git", "node_modules", ".next"]);
+        assert!(!ir.use_gitignore);
+    }
+
+    #[test]
+    fn test_parse_with_ignore_paths_rule() {
+        let parser = ConfigParser::new();
+        let config = r#"
+import { defineConfig, dir } from "repo-lint";
+
+export default defineConfig({
+    layout: dir({}),
+    rules: {
+        ignorePaths: ["**/node_modules/**", "**/.turbo/**"],
+        forbidPaths: ["**/utils/**"],
+    },
+});
+"#;
+        let result = parser.parse_string(config, "test.ts");
+        assert!(result.is_ok());
+        let ir = result.unwrap();
+        assert_eq!(
+            ir.rules.ignore_paths,
+            vec!["**/node_modules/**", "**/.turbo/**"]
+        );
+        assert_eq!(ir.rules.forbid_paths, vec!["**/utils/**"]);
     }
 }

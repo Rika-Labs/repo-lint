@@ -53,6 +53,29 @@ impl ConsoleReporter {
             severity_str, rule_id, violation.message, path_str
         );
 
+        if !violation.attempts.is_empty() {
+            output.push_str("\n  Tried to match:\n");
+            for attempt in &violation.attempts {
+                let status = if attempt.matched {
+                    if self.use_color {
+                        "✓".green().to_string()
+                    } else {
+                        "✓".to_string()
+                    }
+                } else if self.use_color {
+                    "✗".red().to_string()
+                } else {
+                    "✗".to_string()
+                };
+                let reason = attempt
+                    .reason
+                    .as_ref()
+                    .map(|r| format!(" ({})", r))
+                    .unwrap_or_default();
+                output.push_str(&format!("    {} {}{}\n", status, attempt.pattern, reason));
+            }
+        }
+
         if let Some(ref fix) = violation.fix_suggestion {
             let fix_str = if self.use_color {
                 format!("  = fix: {}", fix).green().to_string()
@@ -157,6 +180,7 @@ mod tests {
                 message: CompactString::new("path matches forbidden pattern"),
                 severity: Severity::Error,
                 fix_suggestion: None,
+                attempts: Vec::new(),
             },
             Violation {
                 path: CompactString::new("src/temp.ts"),
@@ -164,6 +188,7 @@ mod tests {
                 message: CompactString::new("forbidden name"),
                 severity: Severity::Warning,
                 fix_suggestion: Some(CompactString::new("rename to something else")),
+                attempts: Vec::new(),
             },
         ];
 

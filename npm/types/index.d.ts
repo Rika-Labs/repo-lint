@@ -4,13 +4,17 @@ export interface DefineConfigOptions {
   rules?: RulesConfig;
   boundaries?: BoundariesConfig;
   deps?: DepsConfig;
+  ignore?: string[];
+  useGitignore?: boolean;
 }
 
 export type LayoutNode =
   | DirNode
   | FileNode
   | ParamNode
-  | ManyNode;
+  | ManyNode
+  | RecursiveNode
+  | EitherNode;
 
 export interface DirNode {
   type: "dir";
@@ -37,11 +41,23 @@ export interface ManyNode {
   child: LayoutNode;
 }
 
+export interface RecursiveNode {
+  type: "recursive";
+  maxDepth?: number;
+  child: LayoutNode;
+}
+
+export interface EitherNode {
+  type: "either";
+  variants: LayoutNode[];
+}
+
 export type CaseStyle = "kebab" | "snake" | "camel" | "pascal" | "any";
 
 export interface RulesConfig {
   forbidPaths?: string[];
   forbidNames?: string[];
+  ignorePaths?: string[];
 }
 
 export interface BoundariesConfig {
@@ -72,3 +88,17 @@ export function many(
   options: { case?: CaseStyle } | LayoutNode,
   child?: LayoutNode
 ): ManyNode;
+export function recursive(
+  options: { maxDepth?: number } | LayoutNode,
+  child?: LayoutNode
+): RecursiveNode;
+export function either(...variants: LayoutNode[]): EitherNode;
+
+export interface NextjsAppRouterOptions {
+  routeCase?: CaseStyle;
+  maxDepth?: number;
+}
+
+export function nextjsAppRouter(options?: NextjsAppRouterOptions): DirNode;
+export function nextjsDefaultIgnore(): string[];
+export function nextjsDefaultIgnorePaths(): string[];

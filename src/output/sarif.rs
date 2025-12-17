@@ -180,6 +180,7 @@ mod tests {
             message: CompactString::new("path matches forbidden pattern"),
             severity: Severity::Error,
             fix_suggestion: None,
+            attempts: Vec::new(),
         }];
 
         let output = reporter.report(&violations);

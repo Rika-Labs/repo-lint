@@ -143,6 +143,19 @@ impl ScaffoldCommand {
                         LayoutNode::Many { child: inner, .. } => {
                             Self::collect_scaffold_actions(inner, &child_path, actions, depth + 1);
                         }
+                        LayoutNode::Recursive { child: inner, .. } => {
+                            Self::collect_scaffold_actions(inner, &child_path, actions, depth + 1);
+                        }
+                        LayoutNode::Either { variants } => {
+                            if let Some(first) = variants.first() {
+                                Self::collect_scaffold_actions(
+                                    first,
+                                    &child_path,
+                                    actions,
+                                    depth + 1,
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -151,6 +164,14 @@ impl ScaffoldCommand {
             }
             LayoutNode::Many { child, .. } => {
                 Self::collect_scaffold_actions(child, current_path, actions, depth + 1);
+            }
+            LayoutNode::Recursive { child, .. } => {
+                Self::collect_scaffold_actions(child, current_path, actions, depth + 1);
+            }
+            LayoutNode::Either { variants } => {
+                if let Some(first) = variants.first() {
+                    Self::collect_scaffold_actions(first, current_path, actions, depth + 1);
+                }
             }
             LayoutNode::File { .. } => {}
         }

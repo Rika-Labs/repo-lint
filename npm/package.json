@@ -1,6 +1,6 @@
 {
   "name": "@rikalabs/repo-lint",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "High-performance filesystem layout linter with TypeScript DSL config",
   "license": "MIT",
   "repository": {
@@ -29,7 +29,8 @@
     "index.js",
     "install.js",
     "bin",
-    "types"
+    "types",
+    "presets"
   ],
   "scripts": {
     "postinstall": "node install.js"

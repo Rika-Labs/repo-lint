@@ -95,6 +95,18 @@ pub enum LayoutNode {
         case: Option<CaseStyle>,
         child: Box<LayoutNode>,
     },
+    Recursive {
+        #[serde(default = "default_max_depth")]
+        max_depth: usize,
+        child: Box<LayoutNode>,
+    },
+    Either {
+        variants: Vec<LayoutNode>,
+    },
+}
+
+fn default_max_depth() -> usize {
+    10
 }
 
 impl LayoutNode {
@@ -143,12 +155,32 @@ impl LayoutNode {
         }
     }
 
+    pub fn recursive(child: LayoutNode) -> Self {
+        Self::Recursive {
+            max_depth: 10,
+            child: Box::new(child),
+        }
+    }
+
+    pub fn recursive_with_depth(max_depth: usize, child: LayoutNode) -> Self {
+        Self::Recursive {
+            max_depth,
+            child: Box::new(child),
+        }
+    }
+
+    pub fn either(variants: Vec<LayoutNode>) -> Self {
+        Self::Either { variants }
+    }
+
     pub fn is_optional(&self) -> bool {
         match self {
             LayoutNode::Dir { optional, .. } => *optional,
             LayoutNode::File { optional, .. } => *optional,
             LayoutNode::Param { .. } => false,
             LayoutNode::Many { .. } => false,
+            LayoutNode::Recursive { .. } => false,
+            LayoutNode::Either { .. } => false,
         }
     }
 }
@@ -159,6 +191,8 @@ pub struct RulesConfig {
     pub forbid_paths: Vec<String>,
     #[serde(default)]
     pub forbid_names: Vec<String>,
+    #[serde(default)]
+    pub ignore_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -190,6 +224,14 @@ pub struct ConfigIR {
     pub rules: RulesConfig,
     pub boundaries: Option<BoundariesConfig>,
     pub deps: Option<DepsConfig>,
+    #[serde(default)]
+    pub ignore: Vec<String>,
+    #[serde(default = "default_use_gitignore")]
+    pub use_gitignore: bool,
+}
+
+fn default_use_gitignore() -> bool {
+    true
 }
 
 impl ConfigIR {
@@ -200,6 +242,8 @@ impl ConfigIR {
             rules: RulesConfig::default(),
             boundaries: None,
             deps: None,
+            ignore: Vec::new(),
+            use_gitignore: true,
         }
     }
 }
@@ -367,5 +411,60 @@ mod tests {
         assert!(CaseStyle::Snake.validate("v1"));
         assert!(CaseStyle::Snake.validate("api_v2"));
         assert!(CaseStyle::Snake.validate("module_123"));
+    }
+
+    #[test]
+    fn test_recursive_node() {
+        let child = LayoutNode::dir(HashMap::new());
+        let recursive = LayoutNode::recursive(child);
+        match recursive {
+            LayoutNode::Recursive { max_depth, .. } => {
+                assert_eq!(max_depth, 10);
+            }
+            _ => panic!("Expected Recursive variant"),
+        }
+    }
+
+    #[test]
+    fn test_recursive_with_custom_depth() {
+        let child = LayoutNode::dir(HashMap::new());
+        let recursive = LayoutNode::recursive_with_depth(5, child);
+        match recursive {
+            LayoutNode::Recursive { max_depth, .. } => {
+                assert_eq!(max_depth, 5);
+            }
+            _ => panic!("Expected Recursive variant"),
+        }
+    }
+
+    #[test]
+    fn test_either_node() {
+        let file = LayoutNode::file();
+        let dir = LayoutNode::dir(HashMap::new());
+        let either = LayoutNode::either(vec![file, dir]);
+        match either {
+            LayoutNode::Either { variants } => {
+                assert_eq!(variants.len(), 2);
+            }
+            _ => panic!("Expected Either variant"),
+        }
+    }
+
+    #[test]
+    fn test_config_with_ignore() {
+        let layout = LayoutNode::dir(HashMap::new());
+        let config = ConfigIR::new(layout);
+        assert!(config.ignore.is_empty());
+        assert!(config.use_gitignore);
+    }
+
+    #[test]
+    fn test_rules_with_ignore_paths() {
+        let rules = RulesConfig {
+            forbid_paths: vec!["**/utils/**".to_string()],
+            forbid_names: vec![],
+            ignore_paths: vec!["**/node_modules/**".to_string()],
+        };
+        assert_eq!(rules.ignore_paths.len(), 1);
     }
 }

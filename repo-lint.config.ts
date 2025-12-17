@@ -45,6 +45,10 @@ export default defineConfig({
       bin: dir({
         "repo-lint": file(),
       }),
+      presets: opt(dir({
+        "index.js": file(),
+        $preset: many(file("*.js")),
+      })),
       types: dir({
         "index.d.ts": file(),
       }),

@@ -78,14 +78,30 @@ impl InspectCommand {
                         MatchResult::AllowedMany { values } => {
                             println!("  Status: ALLOWED (many: {:?})", values);
                         }
-                        MatchResult::Denied { reason } => {
+                        MatchResult::Denied { reason, attempts } => {
                             println!("  Status: DENIED");
                             println!("  Reason: {}", reason);
+                            if !attempts.is_empty() {
+                                println!("  Tried to match:");
+                                for attempt in attempts {
+                                    let status = if attempt.matched { "✓" } else { "✗" };
+                                    let reason = attempt.reason.as_ref().map(|r| format!(" ({})", r)).unwrap_or_default();
+                                    println!("    {} {}{}", status, attempt.pattern, reason);
+                                }
+                            }
                         }
-                        MatchResult::NotInLayout { nearest_valid } => {
+                        MatchResult::NotInLayout { nearest_valid, attempts } => {
                             println!("  Status: NOT IN LAYOUT");
                             if let Some(nearest) = nearest_valid {
                                 println!("  Nearest valid parent: {}", nearest);
+                            }
+                            if !attempts.is_empty() {
+                                println!("  Tried to match:");
+                                for attempt in attempts {
+                                    let status = if attempt.matched { "✓" } else { "✗" };
+                                    let reason = attempt.reason.as_ref().map(|r| format!(" ({})", r)).unwrap_or_default();
+                                    println!("    {} {}{}", status, attempt.pattern, reason);
+                                }
                             }
                         }
                         MatchResult::MissingRequired { expected } => {
@@ -189,6 +205,20 @@ impl InspectCommand {
                     .unwrap_or_default();
                 println!(" [many{}]", case_str);
                 Self::print_layout_tree(child, &format!("{}    ", prefix), true);
+            }
+            crate::config::LayoutNode::Recursive { max_depth, child } => {
+                println!(" [recursive, max_depth: {}]", max_depth);
+                Self::print_layout_tree(child, &format!("{}    ", prefix), true);
+            }
+            crate::config::LayoutNode::Either { variants } => {
+                println!(" [either, {} variants]", variants.len());
+                for (i, variant) in variants.iter().enumerate() {
+                    Self::print_layout_tree(
+                        variant,
+                        &format!("{}    ", prefix),
+                        i == variants.len() - 1,
+                    );
+                }
             }
         }
     }

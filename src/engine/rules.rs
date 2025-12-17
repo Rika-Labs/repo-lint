@@ -8,8 +8,10 @@ pub struct CompiledRules {
     forbid_paths_patterns: Vec<CompactString>,
     forbid_names: Vec<CompactString>,
     forbid_names_lower: Vec<CompactString>,
+    ignore_paths_patterns: Vec<CompactString>,
     has_path_rules: bool,
     has_name_rules: bool,
+    has_ignore_rules: bool,
 }
 
 impl CompiledRules {
@@ -32,13 +34,35 @@ impl CompiledRules {
             .map(|n| CompactString::new(n.to_lowercase()))
             .collect();
 
+        let ignore_paths_patterns: Vec<CompactString> = config
+            .ignore_paths
+            .iter()
+            .map(|s| CompactString::new(s))
+            .collect();
+
         Ok(Self {
             has_path_rules: !config.forbid_paths.is_empty(),
             has_name_rules: !config.forbid_names.is_empty(),
+            has_ignore_rules: !config.ignore_paths.is_empty(),
             forbid_paths_patterns,
             forbid_names,
             forbid_names_lower,
+            ignore_paths_patterns,
         })
+    }
+
+    #[inline]
+    pub fn is_ignored(&self, path: &Path) -> bool {
+        if !self.has_ignore_rules {
+            return false;
+        }
+        let path_str = path.to_string_lossy();
+        for pattern in &self.ignore_paths_patterns {
+            if fast_glob::glob_match(pattern.as_str(), path_str.as_ref()) {
+                return true;
+            }
+        }
+        false
     }
 
     #[inline]
@@ -190,6 +214,7 @@ mod tests {
         let config = RulesConfig {
             forbid_paths: vec!["**/utils/**".to_string(), "**/*.bak".to_string()],
             forbid_names: vec![],
+            ignore_paths: vec![],
         };
 
         let rules = CompiledRules::compile(&config).unwrap();
@@ -209,6 +234,7 @@ mod tests {
         let config = RulesConfig {
             forbid_paths: vec![],
             forbid_names: vec!["temp".to_string(), "test".to_string(), "new".to_string()],
+            ignore_paths: vec![],
         };
 
         let rules = CompiledRules::compile(&config).unwrap();
@@ -231,11 +257,32 @@ mod tests {
         let config = RulesConfig {
             forbid_paths: vec!["**/utils/**".to_string()],
             forbid_names: vec!["temp".to_string()],
+            ignore_paths: vec![],
         };
 
         let rules = CompiledRules::compile(&config).unwrap();
 
         let violations = rules.check_path(Path::new("src/utils/temp.ts"));
         assert_eq!(violations.len(), 2);
+    }
+
+    #[test]
+    fn test_ignore_paths() {
+        let config = RulesConfig {
+            forbid_paths: vec![],
+            forbid_names: vec![],
+            ignore_paths: vec![
+                "**/node_modules/**".to_string(),
+                "**/.turbo/**".to_string(),
+            ],
+        };
+
+        let rules = CompiledRules::compile(&config).unwrap();
+
+        assert!(rules.is_ignored(Path::new("node_modules/lodash/index.js")));
+        assert!(rules.is_ignored(Path::new("packages/app/node_modules/react/index.js")));
+        assert!(rules.is_ignored(Path::new(".turbo/cache/file.txt")));
+        assert!(!rules.is_ignored(Path::new("src/index.ts")));
+        assert!(!rules.is_ignored(Path::new("lib/utils.ts")));
     }
 }
