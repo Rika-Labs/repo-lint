@@ -4,56 +4,96 @@ export default defineConfig({
   mode: "strict",
 
   layout: dir({
-    src: dir({
-      services: dir({
-        $module: param({ case: "kebab" }, dir({
-          api: dir({
-            "index.ts": file(),
-            routes: dir({
-              v1: dir({
-                $resource: many({ case: "kebab" }, dir({
-                  "index.ts": file(),
-                })),
-              }),
-            }),
-          }),
+    ".github": opt(dir({
+      workflows: opt(dir({
+        $workflow: many(file("*.yml")),
+      })),
+    })),
 
-          domain: dir({
-            entities: dir({ $any: many(file("*.ts")) }),
-            "use-cases": dir({ $any: many(file("*.ts")) }),
-          }),
+    benches: opt(dir({
+      $bench: many(file("*.rs")),
+    })),
 
-          infra: opt(dir({
-            db: opt(dir({
-              migrations: opt(dir({})),
-              "index.ts": file(),
-            })),
-          })),
-
-          "README.md": opt(file()),
-        })),
+    docs: opt(dir({
+      src: dir({
+        cli: dir({
+          $doc: many(file("*.md")),
+        }),
+        configuration: dir({
+          $doc: many(file("*.md")),
+        }),
+        contributing: dir({
+          $doc: many(file("*.md")),
+        }),
+        examples: dir({
+          $doc: many(file("*.md")),
+        }),
+        "getting-started": dir({
+          $doc: many(file("*.md")),
+        }),
+        "introduction.md": file(),
+        "SUMMARY.md": file(),
       }),
+      "book.toml": opt(file()),
+    })),
+
+    examples: opt(dir({
+      $example: many(file("*.rs")),
+    })),
+
+    npm: opt(dir({
+      types: dir({
+        "index.d.ts": file(),
+      }),
+      "package.json": file(),
+      "index.js": opt(file()),
+      "README.md": opt(file()),
+    })),
+
+    src: dir({
+      cache: dir({
+        "mod.rs": file(),
+        $module: many(file("*.rs")),
+      }),
+      cli: dir({
+        "mod.rs": file(),
+        $command: many(file("*.rs")),
+      }),
+      config: dir({
+        "mod.rs": file(),
+        $module: many(file("*.rs")),
+      }),
+      engine: dir({
+        "mod.rs": file(),
+        $module: many(file("*.rs")),
+      }),
+      output: dir({
+        "mod.rs": file(),
+        $formatter: many(file("*.rs")),
+      }),
+      "lib.rs": file(),
+      "main.rs": file(),
     }),
 
-    tests: opt(dir({})),
+    tests: opt(dir({
+      integration: opt(dir({
+        "mod.rs": file(),
+        $test: many(file("*.rs")),
+      })),
+    })),
+
+    "Cargo.toml": file(),
+    "Cargo.lock": file(),
+    "LICENSE": file(),
+    "README.md": file(),
+    "CHANGELOG.md": opt(file()),
+    "CONTRIBUTING.md": opt(file()),
+    ".gitignore": file(),
+    "repo-lint.config.ts": file(),
   }),
 
   rules: {
-    forbidPaths: ["**/utils/**", "**/*.{bak,tmp}", "**/*~"],
-    forbidNames: ["new", "final", "copy", "tmp", "old"],
-  },
-
-  boundaries: {
-    modules: "src/services/*",
-    publicApi: "src/services/*/api/index.ts",
-    forbidDeepImports: true,
-  },
-
-  deps: {
-    allow: [
-      { from: "src/services/*/api/**", to: ["src/services/*/domain/**"] },
-      { from: "src/services/*/domain/**", to: [] },
-      { from: "src/services/*/infra/**", to: ["src/services/*/domain/**"] },
-    ],
+    forbidPaths: ["**/target/**", "**/*.bak", "**/*~"],
+    forbidNames: ["tmp", "temp", "new", "old", "copy"],
   },
 });

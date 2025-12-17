@@ -1,1 +1,10 @@
 /target
+.git
+
+node_modules/
+package-lock.json
+npm-debug.log*
+.npm
+node_modules
+package-lock.json
+package.json
