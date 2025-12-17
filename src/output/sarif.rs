@@ -103,7 +103,7 @@ impl Reporter for SarifReporter {
 
         let mut rule_ids: Vec<String> = violations
             .iter()
-            .map(|v| v.rule_id.clone())
+            .map(|v| v.rule_id.to_string())
             .collect();
         rule_ids.sort();
         rule_ids.dedup();
@@ -125,18 +125,18 @@ impl Reporter for SarifReporter {
         let results: Vec<SarifResult> = sorted_violations
             .iter()
             .map(|v| SarifResult {
-                rule_id: v.rule_id.clone(),
+                rule_id: v.rule_id.to_string(),
                 level: match v.severity {
                     Severity::Error => "error".to_string(),
                     Severity::Warning => "warning".to_string(),
                 },
                 message: SarifMessage {
-                    text: v.message.clone(),
+                    text: v.message.to_string(),
                 },
                 locations: vec![SarifLocation {
                     physical_location: SarifPhysicalLocation {
                         artifact_location: SarifArtifactLocation {
-                            uri: v.path.display().to_string(),
+                            uri: v.path.to_string(),
                         },
                     },
                 }],
@@ -166,7 +166,6 @@ impl Reporter for SarifReporter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn test_sarif_reporter_empty() {
@@ -178,11 +177,13 @@ mod tests {
 
     #[test]
     fn test_sarif_reporter_with_violations() {
+        use compact_str::CompactString;
+        
         let reporter = SarifReporter::new();
         let violations = vec![Violation {
-            path: PathBuf::from("src/utils/helper.ts"),
-            rule_id: "forbidPaths".to_string(),
-            message: "path matches forbidden pattern".to_string(),
+            path: CompactString::new("src/utils/helper.ts"),
+            rule_id: CompactString::new("forbidPaths"),
+            message: CompactString::new("path matches forbidden pattern"),
             severity: Severity::Error,
             fix_suggestion: None,
         }];

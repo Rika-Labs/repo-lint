@@ -95,8 +95,7 @@ impl CompiledRules {
                     let forbidden_bytes = forbidden_lower.as_bytes();
                     let forbidden_len = forbidden_bytes.len();
 
-                    let stem_match = stem_end == forbidden_len
-                        && memchr::memmem::find(stem_lower.as_bytes(), forbidden_bytes).is_some()
+                    let stem_match = stem_end == forbidden_len 
                         && stem_lower.as_bytes() == forbidden_bytes;
 
                     let full_match = name_len == forbidden_len

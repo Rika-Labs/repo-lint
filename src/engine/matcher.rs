@@ -1,3 +1,4 @@
+use compact_str::CompactString;
 use std::path::Path;
 
 use super::layout_trie::{LayoutMatcher, MatchResult};
@@ -6,11 +7,11 @@ use crate::config::ConfigIR;
 
 #[derive(Debug, Clone)]
 pub struct Violation {
-    pub path: std::path::PathBuf,
-    pub rule_id: String,
-    pub message: String,
+    pub path: CompactString,
+    pub rule_id: CompactString,
+    pub message: CompactString,
     pub severity: Severity,
-    pub fix_suggestion: Option<String>,
+    pub fix_suggestion: Option<CompactString>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,12 +56,14 @@ impl FileMatcher {
             Severity::Warning
         };
 
+        let path_str = CompactString::new(path.to_string_lossy());
+
         let rule_violations = self.rules.check_path(path);
         for rv in rule_violations {
             violations.push(Violation {
-                path: rv.path().to_path_buf(),
-                rule_id: rv.rule_id().to_string(),
-                message: rv.message(),
+                path: path_str.clone(),
+                rule_id: CompactString::const_new(rv.rule_id()),
+                message: CompactString::new(&rv.message()),
                 severity,
                 fix_suggestion: None,
             });
@@ -71,9 +74,9 @@ impl FileMatcher {
             MatchResult::Allowed | MatchResult::AllowedParam { .. } | MatchResult::AllowedMany { .. } => {}
             MatchResult::Denied { reason } => {
                 violations.push(Violation {
-                    path: path.to_path_buf(),
-                    rule_id: "layout".to_string(),
-                    message: reason,
+                    path: path_str.clone(),
+                    rule_id: CompactString::const_new("layout"),
+                    message: CompactString::new(&reason),
                     severity,
                     fix_suggestion: None,
                 });
@@ -85,18 +88,18 @@ impl FileMatcher {
                     "path not defined in layout".to_string()
                 };
                 violations.push(Violation {
-                    path: path.to_path_buf(),
-                    rule_id: "layout".to_string(),
-                    message: msg,
+                    path: path_str.clone(),
+                    rule_id: CompactString::const_new("layout"),
+                    message: CompactString::new(&msg),
                     severity,
                     fix_suggestion: None,
                 });
             }
             MatchResult::MissingRequired { expected } => {
                 violations.push(Violation {
-                    path: path.to_path_buf(),
-                    rule_id: "layout".to_string(),
-                    message: format!("missing required children: {:?}", expected),
+                    path: path_str,
+                    rule_id: CompactString::const_new("layout"),
+                    message: CompactString::new(&format!("missing required children: {:?}", expected)),
                     severity,
                     fix_suggestion: None,
                 });

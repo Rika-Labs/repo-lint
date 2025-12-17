@@ -43,9 +43,9 @@ impl ConsoleReporter {
         };
 
         let path_str = if self.use_color {
-            violation.path.display().to_string().white().bold().to_string()
+            violation.path.as_str().white().bold().to_string()
         } else {
-            violation.path.display().to_string()
+            violation.path.to_string()
         };
 
         let mut output = format!(
@@ -133,7 +133,7 @@ impl Reporter for ConsoleReporter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use compact_str::CompactString;
 
     #[test]
     fn test_console_reporter_empty() {
@@ -147,18 +147,18 @@ mod tests {
         let reporter = ConsoleReporter::new().no_color();
         let violations = vec![
             Violation {
-                path: PathBuf::from("src/utils/helper.ts"),
-                rule_id: "forbidPaths".to_string(),
-                message: "path matches forbidden pattern".to_string(),
+                path: CompactString::new("src/utils/helper.ts"),
+                rule_id: CompactString::new("forbidPaths"),
+                message: CompactString::new("path matches forbidden pattern"),
                 severity: Severity::Error,
                 fix_suggestion: None,
             },
             Violation {
-                path: PathBuf::from("src/temp.ts"),
-                rule_id: "forbidNames".to_string(),
-                message: "forbidden name".to_string(),
+                path: CompactString::new("src/temp.ts"),
+                rule_id: CompactString::new("forbidNames"),
+                message: CompactString::new("forbidden name"),
                 severity: Severity::Warning,
-                fix_suggestion: Some("rename to something else".to_string()),
+                fix_suggestion: Some(CompactString::new("rename to something else")),
             },
         ];
 

@@ -246,12 +246,71 @@ fn bench_full_check_large() {
     }
 
     let avg_duration: Duration = durations.iter().sum::<Duration>() / iterations as u32;
+    let throughput = expected_files as f64 / avg_duration.as_secs_f64();
 
     println!("\n  Average: {:?}", avg_duration);
+    println!("  Throughput: {:.0} files/sec", throughput);
     println!(
         "  Estimated 500k files: {:.2}s",
         avg_duration.as_secs_f64() * (500_000.0 / expected_files as f64)
     );
+}
+
+fn bench_full_check_xlarge() {
+    println!("\n=== Extra Large Benchmark (200k files) ===\n");
+
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    let num_modules = 2000;
+    let files_per_module = 100;
+    let expected_files = num_modules * (2 + files_per_module);
+
+    println!(
+        "Creating {} modules ({} files)...",
+        num_modules, expected_files
+    );
+
+    create_large_directory_structure(root, num_modules, files_per_module);
+
+    let config = create_test_config();
+    let matcher = FileMatcher::new(&config).unwrap();
+    let walker = Walker::new(root);
+
+    let iterations = 3;
+    let mut durations = Vec::new();
+
+    for i in 0..iterations {
+        let start = Instant::now();
+
+        let violations = walker.walk_and_process(|path| matcher.check_path(path));
+
+        let duration = start.elapsed();
+        durations.push(duration);
+
+        println!(
+            "  Run {}: {} violations in {:?}",
+            i + 1,
+            violations.len(),
+            duration
+        );
+    }
+
+    let avg_duration: Duration = durations.iter().sum::<Duration>() / iterations as u32;
+    let throughput = expected_files as f64 / avg_duration.as_secs_f64();
+
+    println!("\n  Average: {:?}", avg_duration);
+    println!("  Throughput: {:.0} files/sec", throughput);
+    println!(
+        "  Estimated 500k files: {:.2}s",
+        500_000.0 / throughput
+    );
+    
+    if throughput >= 2_000_000.0 {
+        println!("  [PASS] Meets target of 2M files/sec!");
+    } else {
+        println!("  [INFO] Current: {:.1}% of 2M target", throughput / 2_000_000.0 * 100.0);
+    }
 }
 
 fn main() {
@@ -262,6 +321,7 @@ fn main() {
     bench_matcher_throughput();
     bench_full_check();
     bench_full_check_large();
+    bench_full_check_xlarge();
 
     println!("\n================================");
     println!("Benchmarks complete.");

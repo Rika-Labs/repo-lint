@@ -60,11 +60,11 @@ impl Reporter for JsonReporter {
         let json_violations: Vec<JsonViolation> = sorted_violations
             .iter()
             .map(|v| JsonViolation {
-                path: v.path.display().to_string(),
-                rule: v.rule_id.clone(),
-                message: v.message.clone(),
+                path: v.path.to_string(),
+                rule: v.rule_id.to_string(),
+                message: v.message.to_string(),
                 severity: v.severity.to_string(),
-                fix: v.fix_suggestion.clone(),
+                fix: v.fix_suggestion.as_ref().map(|s| s.to_string()),
             })
             .collect();
 
@@ -97,7 +97,7 @@ impl Reporter for JsonReporter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use compact_str::CompactString;
 
     #[test]
     fn test_json_reporter_empty() {
@@ -112,9 +112,9 @@ mod tests {
     fn test_json_reporter_with_violations() {
         let reporter = JsonReporter::new();
         let violations = vec![Violation {
-            path: PathBuf::from("src/utils/helper.ts"),
-            rule_id: "forbidPaths".to_string(),
-            message: "path matches forbidden pattern".to_string(),
+            path: CompactString::new("src/utils/helper.ts"),
+            rule_id: CompactString::new("forbidPaths"),
+            message: CompactString::new("path matches forbidden pattern"),
             severity: Severity::Error,
             fix_suggestion: None,
         }];
@@ -129,9 +129,9 @@ mod tests {
     fn test_json_reporter_compact() {
         let reporter = JsonReporter::new().compact();
         let violations = vec![Violation {
-            path: PathBuf::from("test.ts"),
-            rule_id: "test".to_string(),
-            message: "test".to_string(),
+            path: CompactString::new("test.ts"),
+            rule_id: CompactString::new("test"),
+            message: CompactString::new("test"),
             severity: Severity::Error,
             fix_suggestion: None,
         }];

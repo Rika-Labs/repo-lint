@@ -129,7 +129,7 @@ impl Walker {
         F: Fn(&Path) -> Vec<T> + Send + Sync,
         T: Send + 'static,
     {
-        let (sender, receiver) = crossbeam_channel::unbounded::<T>();
+        let (sender, receiver) = crossbeam_channel::unbounded::<Vec<T>>();
 
         let mut builder = WalkBuilder::new(&self.root);
 
@@ -159,8 +159,8 @@ impl Walker {
                         if let Ok(relative_path) = entry.path().strip_prefix(&root) {
                             if !relative_path.as_os_str().is_empty() {
                                 let items = processor(relative_path);
-                                for item in items {
-                                    let _ = sender.send(item);
+                                if !items.is_empty() {
+                                    let _ = sender.send(items);
                                 }
                             }
                         }
@@ -171,7 +171,12 @@ impl Walker {
         });
 
         drop(sender);
-        receiver.iter().collect()
+        
+        let mut results = Vec::with_capacity(4096);
+        for batch in receiver {
+            results.extend(batch);
+        }
+        results
     }
 
     pub fn walk_changed(&self, base_ref: &str) -> Result<Vec<FileEntry>, std::io::Error> {
