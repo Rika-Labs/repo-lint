@@ -72,7 +72,7 @@ impl ConfigParser {
         let dir = current_file.parent()?;
 
         // Support @/ as root-relative path
-        if specifier.starts_with("@/") {
+        if let Some(stripped) = specifier.strip_prefix("@/") {
             let mut root = dir;
             let mut current = Some(dir);
             while let Some(d) = current {
@@ -81,7 +81,7 @@ impl ConfigParser {
                 }
                 current = d.parent();
             }
-            if let Some(path) = self.resolve_path(&root.join(&specifier[2..])) {
+            if let Some(path) = self.resolve_path(&root.join(stripped)) {
                 return Some(path);
             }
         }
@@ -204,23 +204,20 @@ impl ConfigParser {
                     if let Some(import_path) = self.resolve_import(current_path, specifier) {
                         if let Ok(exports) = self.parse_module_exports(&import_path) {
                             for spec in &import.specifiers {
-                                match spec {
-                                    ImportSpecifier::Named(named) => {
-                                        let local = named.local.sym.to_string();
-                                        let imported = named
-                                            .imported
-                                            .as_ref()
-                                            .map(|i| match i {
-                                                ModuleExportName::Ident(id) => id.sym.to_string(),
-                                                ModuleExportName::Str(s) => s.value.to_string(),
-                                            })
-                                            .unwrap_or_else(|| local.clone());
+                                if let ImportSpecifier::Named(named) = spec {
+                                    let local = named.local.sym.to_string();
+                                    let imported = named
+                                        .imported
+                                        .as_ref()
+                                        .map(|i| match i {
+                                            ModuleExportName::Ident(id) => id.sym.to_string(),
+                                            ModuleExportName::Str(s) => s.value.to_string(),
+                                        })
+                                        .unwrap_or_else(|| local.clone());
 
-                                        if let Some(layout) = exports.get(&imported) {
-                                            imported_layouts.insert(local, layout.clone());
-                                        }
+                                    if let Some(layout) = exports.get(&imported) {
+                                        imported_layouts.insert(local, layout.clone());
                                     }
-                                    _ => {}
                                 }
                             }
                         }
@@ -474,8 +471,11 @@ impl ConfigParser {
                     match key.as_str() {
                         "mode" => mode = self.eval_mode(&kv.value)?,
                         "layout" => {
-                            layout =
-                                Some(self.eval_layout_node(&kv.value, variables, imported_layouts)?)
+                            layout = Some(self.eval_layout_node(
+                                &kv.value,
+                                variables,
+                                imported_layouts,
+                            )?)
                         }
                         "rules" => rules = self.eval_rules(&kv.value)?,
                         "boundaries" => boundaries = Some(self.eval_boundaries(&kv.value)?),
@@ -593,7 +593,8 @@ impl ConfigParser {
                 if let PropOrSpread::Prop(prop) = prop {
                     if let Prop::KeyValue(kv) = &**prop {
                         let key = self.get_prop_name(&kv.key)?;
-                        let value = self.eval_layout_node(&kv.value, variables, imported_layouts)?;
+                        let value =
+                            self.eval_layout_node(&kv.value, variables, imported_layouts)?;
                         children.insert(key, value);
                     }
                 }
@@ -788,7 +789,8 @@ impl ConfigParser {
             ));
         }
 
-        let child = self.eval_layout_node(&call.args[child_idx].expr, variables, imported_layouts)?;
+        let child =
+            self.eval_layout_node(&call.args[child_idx].expr, variables, imported_layouts)?;
 
         Ok(LayoutNode::Many {
             case,
@@ -830,7 +832,8 @@ impl ConfigParser {
             ));
         }
 
-        let child = self.eval_layout_node(&call.args[child_idx].expr, variables, imported_layouts)?;
+        let child =
+            self.eval_layout_node(&call.args[child_idx].expr, variables, imported_layouts)?;
 
         Ok(LayoutNode::Recursive {
             max_depth,

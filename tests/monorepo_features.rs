@@ -35,7 +35,10 @@ export default defineConfig({
     assert_eq!(config.mode, Mode::Warn);
     assert_eq!(config.rules.forbid_paths.len(), 2);
     assert!(config.rules.forbid_paths.contains(&"**/tmp/**".to_string()));
-    assert!(config.rules.forbid_paths.contains(&"**/dist/**".to_string()));
+    assert!(config
+        .rules
+        .forbid_paths
+        .contains(&"**/dist/**".to_string()));
 }
 
 #[test]
@@ -72,7 +75,10 @@ export default defineConfig({
 
     assert_eq!(config.mode, Mode::Warn);
     assert_eq!(config.rules.forbid_paths.len(), 2);
-    assert!(config.rules.forbid_paths.contains(&"**/root/**".to_string()));
+    assert!(config
+        .rules
+        .forbid_paths
+        .contains(&"**/root/**".to_string()));
     assert!(config.rules.forbid_paths.contains(&"**/app/**".to_string()));
 }
 
