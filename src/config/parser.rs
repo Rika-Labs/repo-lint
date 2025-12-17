@@ -583,10 +583,13 @@ impl ConfigParser {
                 Lit::Str(s) => s.span,
                 Lit::Bool(b) => b.span,
                 Lit::Num(n) => n.span,
-                _ => swc_common::DUMMY_SP,
+                _ => return (0, 0),
             },
-            _ => swc_common::DUMMY_SP,
+            _ => return (0, 0),
         };
+        if span.lo.0 == 0 {
+            return (0, 0);
+        }
         let loc = self.source_map.lookup_char_pos(span.lo);
         (loc.line, loc.col_display)
     }
