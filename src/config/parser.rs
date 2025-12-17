@@ -69,10 +69,16 @@ impl ConfigParser {
 
         let mut parser = Parser::new_from(lexer);
         let module = parser.parse_module().map_err(|e| {
-            let loc = self.source_map.lookup_char_pos(e.span().lo);
+            let span = e.span();
+            let (line, col) = if span.lo.0 == 0 {
+                (0, 0)
+            } else {
+                let loc = self.source_map.lookup_char_pos(span.lo);
+                (loc.line, loc.col_display)
+            };
             ParseError::SyntaxError {
-                line: loc.line,
-                col: loc.col_display,
+                line,
+                col,
                 message: e.kind().msg().to_string(),
             }
         })?;
