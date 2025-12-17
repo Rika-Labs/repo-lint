@@ -1,4 +1,4 @@
-import { defineConfig, dir, file, opt, param, many } from "repo-lint";
+import { defineConfig, dir, file, opt, param, many } from "@rikalabs/repo-lint";
 
 export default defineConfig({
   mode: "strict",
