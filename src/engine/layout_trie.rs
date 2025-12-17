@@ -497,10 +497,9 @@ impl LayoutMatcher {
                 })
                 .collect(),
             LayoutNode::Recursive { child, .. } => Self::collect_expected(child),
-            LayoutNode::Either { variants } => variants
-                .iter()
-                .flat_map(Self::collect_expected)
-                .collect(),
+            LayoutNode::Either { variants } => {
+                variants.iter().flat_map(Self::collect_expected).collect()
+            }
             _ => Vec::new(),
         }
     }
