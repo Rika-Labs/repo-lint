@@ -14,9 +14,12 @@ fn main() {
     };
 
     let result = match &cli.command {
-        Commands::Check(args) => {
-            CheckCommand::run(args, &cli.config, output_format, cli.agent, cli.trace)
-        }
+        Commands::Check(args) => CheckCommand::run_with_workspace(
+            args,
+            &cli.config,
+            output_format,
+            cli.workspace.as_deref(),
+        ),
         Commands::Scaffold(args) => ScaffoldCommand::run(args, &cli.config, cli.json),
         Commands::Inspect(args) => InspectCommand::run(args, &cli.config, cli.json),
     };

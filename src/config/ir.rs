@@ -80,11 +80,21 @@ pub enum LayoutNode {
         children: HashMap<String, LayoutNode>,
         #[serde(default)]
         optional: bool,
+        #[serde(default)]
+        required: bool,
+        #[serde(default)]
+        strict: bool,
+        #[serde(default)]
+        max_depth: Option<usize>,
     },
     File {
         pattern: Option<String>,
         #[serde(default)]
         optional: bool,
+        #[serde(default)]
+        required: bool,
+        #[serde(default)]
+        case: Option<CaseStyle>,
     },
     Param {
         name: String,
@@ -94,6 +104,8 @@ pub enum LayoutNode {
     Many {
         case: Option<CaseStyle>,
         child: Box<LayoutNode>,
+        #[serde(default)]
+        max: Option<usize>,
     },
     Recursive {
         #[serde(default = "default_max_depth")]
@@ -114,6 +126,19 @@ impl LayoutNode {
         Self::Dir {
             children,
             optional: false,
+            required: false,
+            strict: false,
+            max_depth: None,
+        }
+    }
+
+    pub fn dir_strict(children: HashMap<String, LayoutNode>) -> Self {
+        Self::Dir {
+            children,
+            optional: false,
+            required: false,
+            strict: true,
+            max_depth: None,
         }
     }
 
@@ -121,6 +146,8 @@ impl LayoutNode {
         Self::File {
             pattern: None,
             optional: false,
+            required: false,
+            case: None,
         }
     }
 
@@ -128,6 +155,17 @@ impl LayoutNode {
         Self::File {
             pattern: Some(pattern.to_string()),
             optional: false,
+            required: false,
+            case: None,
+        }
+    }
+
+    pub fn file_with_case(pattern: Option<&str>, case: CaseStyle) -> Self {
+        Self::File {
+            pattern: pattern.map(|s| s.to_string()),
+            optional: false,
+            required: false,
+            case: Some(case),
         }
     }
 
@@ -136,6 +174,29 @@ impl LayoutNode {
             LayoutNode::Dir { optional, .. } => *optional = true,
             LayoutNode::File { optional, .. } => *optional = true,
             _ => {}
+        }
+        self
+    }
+
+    pub fn required(mut self) -> Self {
+        match &mut self {
+            LayoutNode::Dir { required, .. } => *required = true,
+            LayoutNode::File { required, .. } => *required = true,
+            _ => {}
+        }
+        self
+    }
+
+    pub fn strict(mut self) -> Self {
+        if let LayoutNode::Dir { strict, .. } = &mut self {
+            *strict = true;
+        }
+        self
+    }
+
+    pub fn with_max_depth(mut self, depth: usize) -> Self {
+        if let LayoutNode::Dir { max_depth, .. } = &mut self {
+            *max_depth = Some(depth);
         }
         self
     }
@@ -152,6 +213,15 @@ impl LayoutNode {
         Self::Many {
             case,
             child: Box::new(child),
+            max: None,
+        }
+    }
+
+    pub fn many_with_max(case: Option<CaseStyle>, child: LayoutNode, max: usize) -> Self {
+        Self::Many {
+            case,
+            child: Box::new(child),
+            max: Some(max),
         }
     }
 
@@ -182,6 +252,18 @@ impl LayoutNode {
             LayoutNode::Recursive { .. } => false,
             LayoutNode::Either { .. } => false,
         }
+    }
+
+    pub fn is_required(&self) -> bool {
+        match self {
+            LayoutNode::Dir { required, .. } => *required,
+            LayoutNode::File { required, .. } => *required,
+            _ => false,
+        }
+    }
+
+    pub fn is_strict(&self) -> bool {
+        matches!(self, LayoutNode::Dir { strict: true, .. })
     }
 }
 
@@ -216,6 +298,24 @@ pub struct DepsConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DependencyRule {
+    pub source: String,
+    pub target: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MirrorConfig {
+    pub source: String,
+    pub target: String,
+    pub pattern: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WhenRequirement {
+    pub requires: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ConfigIR {
     #[serde(default)]
     pub mode: Mode,
@@ -228,6 +328,14 @@ pub struct ConfigIR {
     pub ignore: Vec<String>,
     #[serde(default = "default_use_gitignore")]
     pub use_gitignore: bool,
+    #[serde(default)]
+    pub workspaces: Vec<String>,
+    #[serde(default)]
+    pub dependencies: HashMap<String, String>,
+    #[serde(default)]
+    pub mirror: Vec<MirrorConfig>,
+    #[serde(default)]
+    pub when: HashMap<String, WhenRequirement>,
 }
 
 fn default_use_gitignore() -> bool {
@@ -244,6 +352,10 @@ impl ConfigIR {
             deps: None,
             ignore: Vec::new(),
             use_gitignore: true,
+            workspaces: Vec::new(),
+            dependencies: HashMap::new(),
+            mirror: Vec::new(),
+            when: HashMap::new(),
         }
     }
 }
@@ -303,7 +415,8 @@ mod tests {
             file,
             LayoutNode::File {
                 pattern: None,
-                optional: false
+                optional: false,
+                ..
             }
         ));
 
@@ -312,7 +425,8 @@ mod tests {
             optional_file,
             LayoutNode::File {
                 pattern: None,
-                optional: true
+                optional: true,
+                ..
             }
         ));
 
@@ -346,7 +460,9 @@ mod tests {
     fn test_file_with_pattern() {
         let file = LayoutNode::file_with_pattern("*.ts");
         match file {
-            LayoutNode::File { pattern, optional } => {
+            LayoutNode::File {
+                pattern, optional, ..
+            } => {
                 assert_eq!(pattern, Some("*.ts".to_string()));
                 assert!(!optional);
             }

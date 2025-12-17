@@ -61,6 +61,33 @@ impl LayoutMatcher {
         node: &LayoutNode,
         path_so_far: Vec<String>,
     ) -> MatchResult {
+        self.match_segments_with_depth(segments, node, path_so_far, None, 0)
+    }
+
+    fn match_segments_with_depth(
+        &self,
+        segments: &[&str],
+        node: &LayoutNode,
+        path_so_far: Vec<String>,
+        max_depth_limit: Option<usize>,
+        current_depth: usize,
+    ) -> MatchResult {
+        if let Some(limit) = max_depth_limit {
+            if current_depth > limit {
+                return MatchResult::Denied {
+                    reason: format!(
+                        "path exceeds maximum depth of {} (current depth: {})",
+                        limit, current_depth
+                    ),
+                    attempts: vec![MatchAttempt {
+                        pattern: format!("maxDepth: {}", limit),
+                        matched: false,
+                        reason: Some("directory nesting too deep".to_string()),
+                    }],
+                };
+            }
+        }
+
         if segments.is_empty() {
             return match node {
                 LayoutNode::Dir { .. } => MatchResult::Allowed,
@@ -73,14 +100,25 @@ impl LayoutMatcher {
         let remaining = &segments[1..];
 
         match node {
-            LayoutNode::Dir { children, .. } => {
+            LayoutNode::Dir {
+                children,
+                strict,
+                max_depth,
+                ..
+            } => {
+                let effective_max_depth = max_depth.or(max_depth_limit);
+
                 if let Some(child) = children.get(current) {
-                    return self.match_segments(
+                    return self.match_segments_with_depth(
                         remaining,
                         child,
                         self.extend_path(&path_so_far, current),
+                        effective_max_depth,
+                        current_depth + 1,
                     );
                 }
+
+                let is_strict = *strict;
 
                 for (key, child) in children {
                     if key.starts_with('$') {
@@ -91,10 +129,12 @@ impl LayoutMatcher {
                                 child: inner,
                             } => {
                                 if case.validate(current) {
-                                    let result = self.match_segments(
+                                    let result = self.match_segments_with_depth(
                                         remaining,
                                         inner,
                                         self.extend_path(&path_so_far, current),
+                                        effective_max_depth,
+                                        current_depth + 1,
                                     );
                                     if matches!(
                                         result,
@@ -126,7 +166,9 @@ impl LayoutMatcher {
                                     };
                                 }
                             }
-                            LayoutNode::Many { case, child: inner } => {
+                            LayoutNode::Many {
+                                case, child: inner, ..
+                            } => {
                                 if let Some(case_style) = case {
                                     if !case_style.validate(current) {
                                         return MatchResult::Denied {
@@ -149,10 +191,54 @@ impl LayoutMatcher {
                                         };
                                     }
                                 }
-                                let result = self.match_segments(
+
+                                if let LayoutNode::File {
+                                    pattern,
+                                    case: file_case,
+                                    ..
+                                } = inner.as_ref()
+                                {
+                                    if let Some(pat) = pattern {
+                                        if !Self::matches_pattern(current, pat) {
+                                            continue;
+                                        }
+                                    }
+                                    if let Some(case_style) = file_case {
+                                        let name_without_ext = if let Some(pos) = current.rfind('.')
+                                        {
+                                            &current[..pos]
+                                        } else {
+                                            current
+                                        };
+                                        if !case_style.validate(name_without_ext) {
+                                            return MatchResult::Denied {
+                                                reason: format!(
+                                                    "'{}' does not match {} case",
+                                                    name_without_ext,
+                                                    format!("{:?}", case_style).to_lowercase()
+                                                ),
+                                                attempts: vec![MatchAttempt {
+                                                    pattern: format!(
+                                                        "file(case: {})",
+                                                        format!("{:?}", case_style).to_lowercase()
+                                                    ),
+                                                    matched: false,
+                                                    reason: Some(format!(
+                                                        "filename must be {} case",
+                                                        format!("{:?}", case_style).to_lowercase()
+                                                    )),
+                                                }],
+                                            };
+                                        }
+                                    }
+                                }
+
+                                let result = self.match_segments_with_depth(
                                     remaining,
                                     inner,
                                     self.extend_path(&path_so_far, current),
+                                    effective_max_depth,
+                                    current_depth + 1,
                                 );
                                 if matches!(
                                     result,
@@ -188,8 +274,13 @@ impl LayoutMatcher {
                             }
                             LayoutNode::Either { variants } => {
                                 for variant in variants {
-                                    let result =
-                                        self.match_segments(segments, variant, path_so_far.clone());
+                                    let result = self.match_segments_with_depth(
+                                        segments,
+                                        variant,
+                                        path_so_far.clone(),
+                                        effective_max_depth,
+                                        current_depth,
+                                    );
                                     if matches!(
                                         result,
                                         MatchResult::Allowed
@@ -234,16 +325,26 @@ impl LayoutMatcher {
                     });
                 }
 
-                MatchResult::NotInLayout {
-                    nearest_valid: if path_so_far.is_empty() {
-                        None
-                    } else {
-                        Some(path_so_far.join("/"))
-                    },
-                    attempts,
+                if is_strict {
+                    MatchResult::Denied {
+                        reason: format!(
+                            "'{}' not allowed in strict directory (no matching pattern)",
+                            current
+                        ),
+                        attempts,
+                    }
+                } else {
+                    MatchResult::NotInLayout {
+                        nearest_valid: if path_so_far.is_empty() {
+                            None
+                        } else {
+                            Some(path_so_far.join("/"))
+                        },
+                        attempts,
+                    }
                 }
             }
-            LayoutNode::File { pattern, .. } => {
+            LayoutNode::File { pattern, case, .. } => {
                 if !remaining.is_empty() {
                     return MatchResult::Denied {
                         reason: format!("'{}' is a file, cannot have children", current),
@@ -268,14 +369,44 @@ impl LayoutMatcher {
                     }
                 }
 
+                if let Some(case_style) = case {
+                    let name_without_ext = if let Some(pos) = current.rfind('.') {
+                        &current[..pos]
+                    } else {
+                        current
+                    };
+                    if !case_style.validate(name_without_ext) {
+                        return MatchResult::Denied {
+                            reason: format!(
+                                "'{}' does not match {} case",
+                                name_without_ext,
+                                format!("{:?}", case_style).to_lowercase()
+                            ),
+                            attempts: vec![MatchAttempt {
+                                pattern: format!(
+                                    "file(case: {})",
+                                    format!("{:?}", case_style).to_lowercase()
+                                ),
+                                matched: false,
+                                reason: Some(format!(
+                                    "filename must be {} case",
+                                    format!("{:?}", case_style).to_lowercase()
+                                )),
+                            }],
+                        };
+                    }
+                }
+
                 MatchResult::Allowed
             }
             LayoutNode::Param { name, case, child } => {
                 if case.validate(current) {
-                    let result = self.match_segments(
+                    let result = self.match_segments_with_depth(
                         remaining,
                         child,
                         self.extend_path(&path_so_far, current),
+                        max_depth_limit,
+                        current_depth + 1,
                     );
                     if matches!(
                         result,
@@ -307,7 +438,7 @@ impl LayoutMatcher {
                     }],
                 }
             }
-            LayoutNode::Many { case, child } => {
+            LayoutNode::Many { case, child, .. } => {
                 if let Some(case_style) = case {
                     if !case_style.validate(current) {
                         return MatchResult::Denied {
@@ -330,7 +461,13 @@ impl LayoutMatcher {
                         };
                     }
                 }
-                self.match_segments(remaining, child, self.extend_path(&path_so_far, current))
+                self.match_segments_with_depth(
+                    remaining,
+                    child,
+                    self.extend_path(&path_so_far, current),
+                    max_depth_limit,
+                    current_depth + 1,
+                )
             }
             LayoutNode::Recursive { max_depth, child } => {
                 self.match_recursive(segments, child, path_so_far, *max_depth, 0)
@@ -338,7 +475,13 @@ impl LayoutMatcher {
             LayoutNode::Either { variants } => {
                 let mut all_attempts = Vec::new();
                 for (i, variant) in variants.iter().enumerate() {
-                    let result = self.match_segments(segments, variant, path_so_far.clone());
+                    let result = self.match_segments_with_depth(
+                        segments,
+                        variant,
+                        path_so_far.clone(),
+                        max_depth_limit,
+                        current_depth,
+                    );
                     match &result {
                         MatchResult::Allowed
                         | MatchResult::AllowedParam { .. }
@@ -399,7 +542,7 @@ impl LayoutMatcher {
             };
         }
 
-        let result = self.match_segments(segments, child, path_so_far.clone());
+        let result = self.match_segments_with_depth(segments, child, path_so_far.clone(), None, 0);
         if matches!(
             result,
             MatchResult::Allowed

@@ -199,6 +199,10 @@ mod tests {
             deps: None,
             ignore: vec![],
             use_gitignore: true,
+            workspaces: vec![],
+            dependencies: HashMap::new(),
+            mirror: vec![],
+            when: HashMap::new(),
         }
     }
 

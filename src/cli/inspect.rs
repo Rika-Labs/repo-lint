@@ -171,10 +171,30 @@ impl InspectCommand {
         let _extension = if is_last { "    " } else { "│   " };
 
         match node {
-            crate::config::LayoutNode::Dir { children, optional } => {
+            crate::config::LayoutNode::Dir {
+                children,
+                optional,
+                required,
+                strict,
+                ..
+            } => {
                 if !prefix.is_empty() {
-                    let opt = if *optional { " (opt)" } else { "" };
-                    println!("{}[dir]{}", prefix, opt);
+                    let mut flags = Vec::new();
+                    if *optional {
+                        flags.push("opt");
+                    }
+                    if *required {
+                        flags.push("req");
+                    }
+                    if *strict {
+                        flags.push("strict");
+                    }
+                    let flag_str = if flags.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" ({})", flags.join(", "))
+                    };
+                    println!("{}[dir]{}", prefix, flag_str);
                 }
 
                 let mut sorted_children: Vec<_> = children.iter().collect();
@@ -197,24 +217,44 @@ impl InspectCommand {
                     );
                 }
             }
-            crate::config::LayoutNode::File { pattern, optional } => {
-                let opt = if *optional { " (opt)" } else { "" };
+            crate::config::LayoutNode::File {
+                pattern,
+                optional,
+                required,
+                case,
+            } => {
+                let mut flags = Vec::new();
+                if *optional {
+                    flags.push("opt".to_string());
+                }
+                if *required {
+                    flags.push("req".to_string());
+                }
+                if let Some(c) = case {
+                    flags.push(format!("case: {:?}", c));
+                }
+                let flag_str = if flags.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", flags.join(", "))
+                };
                 let pat = pattern
                     .as_ref()
                     .map(|p| format!(" [{}]", p))
                     .unwrap_or_default();
-                println!("{}{}", pat, opt);
+                println!("{}{}", pat, flag_str);
             }
             crate::config::LayoutNode::Param { name, case, child } => {
                 println!(" [param: {}, case: {:?}]", name, case);
                 Self::print_layout_tree(child, &format!("{}    ", prefix), true);
             }
-            crate::config::LayoutNode::Many { case, child } => {
+            crate::config::LayoutNode::Many { case, child, max } => {
                 let case_str = case
                     .as_ref()
                     .map(|c| format!(", case: {:?}", c))
                     .unwrap_or_default();
-                println!(" [many{}]", case_str);
+                let max_str = max.map(|m| format!(", max: {}", m)).unwrap_or_default();
+                println!(" [many{}{}]", case_str, max_str);
                 Self::print_layout_tree(child, &format!("{}    ", prefix), true);
             }
             crate::config::LayoutNode::Recursive { max_depth, child } => {

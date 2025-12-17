@@ -52,6 +52,23 @@ export default defineConfig({
       types: dir({
         "index.d.ts": file(),
       }),
+      // Sub-path export directories
+      directory: opt(dir({
+        "index.js": file(),
+        "index.d.ts": file(),
+      })),
+      optional: opt(dir({
+        "index.js": file(),
+        "index.d.ts": file(),
+      })),
+      required: opt(dir({
+        "index.js": file(),
+        "index.d.ts": file(),
+      })),
+      file: opt(dir({
+        "index.js": file(),
+        "index.d.ts": file(),
+      })),
       "package.json": file(),
       "index.js": file(),
       "install.js": file(),
@@ -90,6 +107,9 @@ export default defineConfig({
       })),
       $test: many(file("*.rs")),
     })),
+
+    // Allow node_modules for npm package
+    node_modules: opt(dir({})),
 
     "Cargo.toml": file(),
     "Cargo.lock": file(),

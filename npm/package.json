@@ -1,6 +1,6 @@
 {
   "name": "@rikalabs/repo-lint",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "description": "High-performance filesystem layout linter with TypeScript DSL config",
   "license": "MIT",
   "repository": {
@@ -22,6 +22,38 @@
   ],
   "main": "index.js",
   "types": "types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "require": "./index.js",
+      "import": "./index.js"
+    },
+    "./directory": {
+      "types": "./directory/index.d.ts",
+      "require": "./directory/index.js",
+      "import": "./directory/index.js"
+    },
+    "./optional": {
+      "types": "./optional/index.d.ts",
+      "require": "./optional/index.js",
+      "import": "./optional/index.js"
+    },
+    "./required": {
+      "types": "./required/index.d.ts",
+      "require": "./required/index.js",
+      "import": "./required/index.js"
+    },
+    "./file": {
+      "types": "./file/index.d.ts",
+      "require": "./file/index.js",
+      "import": "./file/index.js"
+    },
+    "./presets": {
+      "types": "./presets/index.d.ts",
+      "require": "./presets/index.js",
+      "import": "./presets/index.js"
+    }
+  },
   "bin": {
     "repo-lint": "./bin/repo-lint"
   },
@@ -30,7 +62,11 @@
     "install.js",
     "bin",
     "types",
-    "presets"
+    "presets",
+    "directory",
+    "optional",
+    "required",
+    "file"
   ],
   "scripts": {
     "postinstall": "node install.js"

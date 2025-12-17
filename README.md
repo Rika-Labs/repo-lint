@@ -6,11 +6,14 @@ A high-performance filesystem layout linter with TypeScript DSL config.
 
 ## Features
 
-- **TypeScript DSL Config**: Define filesystem structure using `dir`, `file`, `opt`, `param`, `many`, `recursive`, and `either`
+- **TypeScript DSL Config**: Define filesystem structure using `directory`, `file`, `optional`, `required`, `param`, `many`, `recursive`, and `either`
 - **High Performance**: Built in Rust with parallel file walking (~950k paths/sec)
 - **Recursive Matching**: Handle arbitrary-depth structures like Next.js App Router
 - **Framework Presets**: Ready-to-use layouts for Next.js and more
-- **Naming Convention Rules**: Enforce kebab-case, snake_case, camelCase, or PascalCase
+- **Naming Convention Rules**: Enforce kebab-case, snake_case, camelCase, or PascalCase on files and directories
+- **Structural Validation**: Dependencies, mirroring, and conditional requirements between files
+- **Depth & Count Limits**: Control directory nesting depth and file counts
+- **Strict Mode**: Reject files not explicitly defined in your layout
 - **Forbidden Paths/Names**: Block unwanted patterns like `**/utils/**` or temporary files
 - **Ignore Paths**: Skip directories entirely (honors .gitignore by default)
 - **Multiple Output Formats**: Console, JSON, and SARIF (for GitHub Code Scanning)
@@ -137,13 +140,33 @@ repo-lint inspect deps src/foo.ts              # Show import dependencies (M4)
 
 | Function | Description |
 |----------|-------------|
-| `dir({...})` | Define a directory with children |
+| `directory({...})` | Define a directory with children (alias: `dir`) |
 | `file(pattern?)` | Define a file, optionally with glob pattern |
-| `opt(node)` | Mark a node as optional |
+| `file({ pattern, case })` | Define a file with case validation |
+| `optional(node)` | Mark a node as optional (alias: `opt`) |
+| `required(node)` | Mark a node as required (must exist) |
 | `param(opts, node)` | Dynamic segment with naming constraints |
-| `many(opts, node)` | Allow multiple matches |
+| `many(opts, node)` | Allow multiple matches (supports `max` count) |
 | `recursive(opts?, node)` | Match arbitrary depth (e.g., Next.js routes) |
 | `either(...nodes)` | Match any of the variants (first match wins) |
+
+### Directory Options
+
+```typescript
+directory({
+  // Children...
+}, {
+  strict: true,      // Reject files not defined in layout
+  maxDepth: 3,       // Maximum nesting depth
+})
+```
+
+### File Case Validation
+
+```typescript
+// Enforce kebab-case filenames
+$files: many(file({ pattern: "*.ts", case: "kebab" }))
+```
 
 ### Case Styles
 
@@ -205,6 +228,44 @@ export default defineConfig({
 |----------|---------|
 | `nextjsDefaultIgnore()` | `[".next", "node_modules", ".turbo", "out", ".vercel"]` |
 | `nextjsDefaultIgnorePaths()` | `["**/.next/**", "**/node_modules/**", "**/.turbo/**", ...]` |
+
+### Structural Validation
+
+#### Dependencies
+
+Require that certain files exist when source files match a pattern:
+
+```typescript
+dependencies: {
+  "src/controllers/*.ts": "src/services/*.ts",  // Controllers need services
+  "src/**/*.tsx": "src/**/*.test.tsx",          // Components need tests
+}
+```
+
+#### Mirror
+
+Enforce structural mirroring between directories:
+
+```typescript
+mirror: [
+  {
+    source: "src/components/*",
+    target: "src/components/*.test.tsx",
+    pattern: "*.tsx -> *.test.tsx"
+  }
+]
+```
+
+#### When Conditions
+
+Require related files when a trigger file exists:
+
+```typescript
+when: {
+  "controller.ts": { requires: ["service.ts", "dto.ts"] },
+  "index.tsx": { requires: ["styles.css"] }
+}
+```
 
 ### Boundaries (M4)
 

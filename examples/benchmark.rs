@@ -54,6 +54,10 @@ fn create_test_config() -> ConfigIR {
         deps: None,
         ignore: vec![],
         use_gitignore: true,
+        workspaces: vec![],
+        dependencies: std::collections::HashMap::new(),
+        mirror: vec![],
+        when: std::collections::HashMap::new(),
     }
 }
 

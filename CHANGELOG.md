@@ -2,6 +2,71 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2024-12-17
+
+### Added
+
+- **API Improvements** - Clearer function names with backward compatibility
+  - `directory()` - alias for `dir()` (both still work)
+  - `optional()` - alias for `opt()` (both still work)
+  - `required()` - mark files/directories that must exist
+
+- **Strict Mode** - Reject files not explicitly defined in layout
+  ```typescript
+  directory({ ... }, { strict: true })
+  ```
+
+- **File Case Validation** - Enforce naming conventions on files
+  ```typescript
+  $files: many(file({ pattern: "*.ts", case: "kebab" }))
+  ```
+
+- **Depth Limits** - Control maximum directory nesting
+  ```typescript
+  directory({ ... }, { maxDepth: 3 })
+  ```
+
+- **Count Limits** - Limit number of files matching `many()`
+  ```typescript
+  $files: many({ max: 10 }, file("*.ts"))
+  ```
+
+- **Dependencies Validation** - Require related files exist
+  ```typescript
+  dependencies: {
+    "src/controllers/*.ts": "src/services/*.ts"
+  }
+  ```
+
+- **Mirror Validation** - Enforce structural mirroring
+  ```typescript
+  mirror: [{
+    source: "src/components/*",
+    target: "src/components/*.test.tsx",
+    pattern: "*.tsx -> *.test.tsx"
+  }]
+  ```
+
+- **When Conditions** - Conditional file requirements
+  ```typescript
+  when: {
+    "controller.ts": { requires: ["service.ts"] }
+  }
+  ```
+
+- **Sub-path Imports** - Cleaner imports for specific functions
+  ```typescript
+  import { directory } from "@rikalabs/repo-lint/directory";
+  import { optional } from "@rikalabs/repo-lint/optional";
+  import { required } from "@rikalabs/repo-lint/required";
+  import { file } from "@rikalabs/repo-lint/file";
+  ```
+
+### Changed
+
+- PostValidator now runs after file walk for required/dependencies/mirror/when validations
+- Depth tracking throughout layout matching for maxDepth enforcement
+
 ## [0.2.0] - 2024-12-17
 
 ### Added

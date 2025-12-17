@@ -34,6 +34,14 @@ pub struct Cli {
 
     #[arg(long, global = true)]
     pub trace: bool,
+
+    #[arg(
+        long,
+        short = 'w',
+        global = true,
+        help = "Filter workspaces to run (e.g., apps/web or apps/*)"
+    )]
+    pub workspace: Option<String>,
 }
 
 #[derive(Subcommand)]

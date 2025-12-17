@@ -7,7 +7,8 @@ use swc_ecma_parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax};
 use thiserror::Error;
 
 use super::ir::{
-    BoundariesConfig, CaseStyle, ConfigIR, DepsAllowRule, DepsConfig, LayoutNode, Mode, RulesConfig,
+    BoundariesConfig, CaseStyle, ConfigIR, DepsAllowRule, DepsConfig, LayoutNode, MirrorConfig,
+    Mode, RulesConfig, WhenRequirement,
 };
 
 #[derive(Error, Debug)]
@@ -147,6 +148,10 @@ impl ConfigParser {
         let mut deps = None;
         let mut ignore = Vec::new();
         let mut use_gitignore = true;
+        let mut workspaces = Vec::new();
+        let mut dependencies = HashMap::new();
+        let mut mirror = Vec::new();
+        let mut when = HashMap::new();
 
         for prop in &obj.props {
             if let PropOrSpread::Prop(prop) = prop {
@@ -160,6 +165,10 @@ impl ConfigParser {
                         "deps" => deps = Some(self.eval_deps(&kv.value)?),
                         "ignore" => ignore = self.eval_string_array(&kv.value)?,
                         "useGitignore" => use_gitignore = self.eval_bool(&kv.value)?,
+                        "workspaces" => workspaces = self.eval_string_array(&kv.value)?,
+                        "dependencies" => dependencies = self.eval_dependencies(&kv.value)?,
+                        "mirror" => mirror = self.eval_mirror(&kv.value)?,
+                        "when" => when = self.eval_when(&kv.value)?,
                         _ => {}
                     }
                 }
@@ -176,6 +185,10 @@ impl ConfigParser {
             deps,
             ignore,
             use_gitignore,
+            workspaces,
+            dependencies,
+            mirror,
+            when,
         })
     }
 
@@ -213,9 +226,10 @@ impl ConfigParser {
                 if let Expr::Ident(ident) = &**callee_expr {
                     let fn_name = ident.sym.as_ref();
                     return match fn_name {
-                        "dir" => self.eval_dir(call, variables),
+                        "dir" | "directory" => self.eval_dir(call, variables),
                         "file" => self.eval_file(call),
-                        "opt" => self.eval_opt(call, variables),
+                        "opt" | "optional" => self.eval_opt(call, variables),
+                        "required" => self.eval_required(call, variables),
                         "param" => self.eval_param(call, variables),
                         "many" => self.eval_many(call, variables),
                         "recursive" => self.eval_recursive(call, variables),
@@ -236,7 +250,9 @@ impl ConfigParser {
         Err(ParseError::UnsupportedExpression {
             line: loc.0,
             col: loc.1,
-            message: "Expected DSL function call (dir, file, opt, param, many)".to_string(),
+            message:
+                "Expected DSL function call (directory, file, optional, required, param, many)"
+                    .to_string(),
         })
     }
 
@@ -246,6 +262,9 @@ impl ConfigParser {
         variables: &HashMap<String, &Expr>,
     ) -> Result<LayoutNode, ParseError> {
         let mut children = HashMap::new();
+        let mut strict = false;
+        let mut max_depth = None;
+
         if let Some(arg) = call.args.first() {
             let obj = self.expect_object(&arg.expr)?;
             for prop in &obj.props {
@@ -258,21 +277,73 @@ impl ConfigParser {
                 }
             }
         }
+
+        if call.args.len() >= 2 {
+            if let Ok(opts) = self.expect_object(&call.args[1].expr) {
+                for prop in &opts.props {
+                    if let PropOrSpread::Prop(prop) = prop {
+                        if let Prop::KeyValue(kv) = &**prop {
+                            let key = self.get_prop_name(&kv.key)?;
+                            match key.as_str() {
+                                "strict" => strict = self.expect_bool(&kv.value)?,
+                                "maxDepth" => {
+                                    max_depth = Some(self.expect_number(&kv.value)? as usize)
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(LayoutNode::Dir {
             children,
             optional: false,
+            required: false,
+            strict,
+            max_depth,
         })
     }
 
     fn eval_file(&self, call: &CallExpr) -> Result<LayoutNode, ParseError> {
-        let pattern = if let Some(arg) = call.args.first() {
-            Some(self.expect_string(&arg.expr)?)
-        } else {
-            None
-        };
+        if let Some(arg) = call.args.first() {
+            if let Ok(s) = self.expect_string(&arg.expr) {
+                return Ok(LayoutNode::File {
+                    pattern: Some(s),
+                    optional: false,
+                    required: false,
+                    case: None,
+                });
+            }
+            if let Ok(obj) = self.expect_object(&arg.expr) {
+                let mut pattern = None;
+                let mut case = None;
+                for prop in &obj.props {
+                    if let PropOrSpread::Prop(prop) = prop {
+                        if let Prop::KeyValue(kv) = &**prop {
+                            let key = self.get_prop_name(&kv.key)?;
+                            match key.as_str() {
+                                "pattern" => pattern = Some(self.expect_string(&kv.value)?),
+                                "case" => case = Some(self.eval_case_style(&kv.value)?),
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                return Ok(LayoutNode::File {
+                    pattern,
+                    optional: false,
+                    required: false,
+                    case,
+                });
+            }
+        }
         Ok(LayoutNode::File {
-            pattern,
+            pattern: None,
             optional: false,
+            required: false,
+            case: None,
         })
     }
 
@@ -291,7 +362,26 @@ impl ConfigParser {
             return Ok(node);
         }
         Err(ParseError::MissingField(
-            "opt() requires an argument".to_string(),
+            "optional() requires an argument".to_string(),
+        ))
+    }
+
+    fn eval_required(
+        &self,
+        call: &CallExpr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<LayoutNode, ParseError> {
+        if let Some(arg) = call.args.first() {
+            let mut node = self.eval_layout_node(&arg.expr, variables)?;
+            match &mut node {
+                LayoutNode::Dir { required, .. } => *required = true,
+                LayoutNode::File { required, .. } => *required = true,
+                _ => {}
+            }
+            return Ok(node);
+        }
+        Err(ParseError::MissingField(
+            "required() requires an argument".to_string(),
         ))
     }
 
@@ -342,25 +432,28 @@ impl ConfigParser {
         call: &CallExpr,
         variables: &HashMap<String, &Expr>,
     ) -> Result<LayoutNode, ParseError> {
-        let (case, child_idx) = if call.args.len() >= 2 {
+        let (case, max, child_idx) = if call.args.len() >= 2 {
             if let Ok(obj) = self.expect_object(&call.args[0].expr) {
                 let mut case = None;
+                let mut max = None;
                 for prop in &obj.props {
                     if let PropOrSpread::Prop(prop) = prop {
                         if let Prop::KeyValue(kv) = &**prop {
                             let key = self.get_prop_name(&kv.key)?;
-                            if key == "case" {
-                                case = Some(self.eval_case_style(&kv.value)?);
+                            match key.as_str() {
+                                "case" => case = Some(self.eval_case_style(&kv.value)?),
+                                "max" => max = Some(self.expect_number(&kv.value)? as usize),
+                                _ => {}
                             }
                         }
                     }
                 }
-                (case, 1)
+                (case, max, 1)
             } else {
-                (None, 0)
+                (None, None, 0)
             }
         } else {
-            (None, 0)
+            (None, None, 0)
         };
 
         if call.args.len() <= child_idx {
@@ -374,6 +467,7 @@ impl ConfigParser {
         Ok(LayoutNode::Many {
             case,
             child: Box::new(child),
+            max,
         })
     }
 
@@ -556,6 +650,87 @@ impl ConfigParser {
             result.push(self.expect_string(&elem.expr)?);
         }
         Ok(result)
+    }
+
+    fn eval_dependencies(&self, expr: &Expr) -> Result<HashMap<String, String>, ParseError> {
+        let obj = self.expect_object(expr)?;
+        let mut deps = HashMap::new();
+
+        for prop in &obj.props {
+            if let PropOrSpread::Prop(prop) = prop {
+                if let Prop::KeyValue(kv) = &**prop {
+                    let key = self.get_prop_name(&kv.key)?;
+                    let value = self.expect_string(&kv.value)?;
+                    deps.insert(key, value);
+                }
+            }
+        }
+
+        Ok(deps)
+    }
+
+    fn eval_mirror(&self, expr: &Expr) -> Result<Vec<MirrorConfig>, ParseError> {
+        let arr = self.expect_array(expr)?;
+        let mut mirrors = Vec::new();
+
+        for elem in arr.elems.iter().flatten() {
+            let obj = self.expect_object(&elem.expr)?;
+            let mut source = String::new();
+            let mut target = String::new();
+            let mut pattern = String::new();
+
+            for prop in &obj.props {
+                if let PropOrSpread::Prop(prop) = prop {
+                    if let Prop::KeyValue(kv) = &**prop {
+                        let key = self.get_prop_name(&kv.key)?;
+                        match key.as_str() {
+                            "source" => source = self.expect_string(&kv.value)?,
+                            "target" => target = self.expect_string(&kv.value)?,
+                            "pattern" => pattern = self.expect_string(&kv.value)?,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
+            mirrors.push(MirrorConfig {
+                source,
+                target,
+                pattern,
+            });
+        }
+
+        Ok(mirrors)
+    }
+
+    fn eval_when(&self, expr: &Expr) -> Result<HashMap<String, WhenRequirement>, ParseError> {
+        let obj = self.expect_object(expr)?;
+        let mut when = HashMap::new();
+
+        for prop in &obj.props {
+            if let PropOrSpread::Prop(prop) = prop {
+                if let Prop::KeyValue(kv) = &**prop {
+                    let key = self.get_prop_name(&kv.key)?;
+                    let req_obj = self.expect_object(&kv.value)?;
+                    let mut requires = Vec::new();
+
+                    for req_prop in &req_obj.props {
+                        if let PropOrSpread::Prop(req_prop) = req_prop {
+                            if let Prop::KeyValue(req_kv) = &**req_prop {
+                                let req_key = self.get_prop_name(&req_kv.key)?;
+                                if req_key == "requires" {
+                                    requires = self.eval_string_array(&req_kv.value)?;
+                                }
+                            }
+                        }
+                    }
+
+                    when.insert(key, WhenRequirement { requires });
+                }
+            }
+        }
+
+        Ok(when)
     }
 
     fn expect_object<'a>(&self, expr: &'a Expr) -> Result<&'a ObjectLit, ParseError> {
