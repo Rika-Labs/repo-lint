@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2024-12-17
+
+### Fixed
+
+- **Bug #1: `ignore` config now works for directories** - Previously `ignore: ['apps', 'packages']` didn't work; files inside were still checked. Now directories and glob patterns like `**/utils/**` are properly ignored during file walking.
+- **Bug #2: `inspect path` and `check` now consistent** - `inspect path` now shows violations from rules (forbidPaths, ignorePaths) and reports if a path is ignored, matching `check` behavior.
+- **Better recursive pattern error messages** - When recursion depth is exceeded, error now shows the level and path where it failed, plus a hint to increase maxDepth.
+
+### Added
+
+- **Documentation for strict mode behavior** - Clarified that `strict: true` rejects files not matching any pattern in the directory.
+- **Documentation for file pattern + case validation** - Clarified that case validation only applies to files matching the pattern.
+
 ## [0.3.1] - 2024-12-17
 
 ### Fixed

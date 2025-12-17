@@ -45,15 +45,27 @@ impl InspectCommand {
             }
             InspectType::Path { path } => {
                 let matcher = FileMatcher::new(&config)?;
-                let explanation = matcher.explain_path(&PathBuf::from(path));
+                let path_buf = PathBuf::from(path);
+                let normalized_path = path.replace('\\', "/");
+
+                let is_ignored = matcher.is_ignored(&path_buf);
+                let violations = matcher.check_path(&path_buf);
+                let explanation = matcher.explain_path(&path_buf);
 
                 if json_output {
                     let json_output = serde_json::json!({
-                        "path": path,
-                        "allowed": matches!(
+                        "path": normalized_path,
+                        "ignored": is_ignored,
+                        "allowed": is_ignored || (violations.is_empty() && matches!(
                             explanation.match_result,
                             MatchResult::Allowed | MatchResult::AllowedParam { .. } | MatchResult::AllowedMany { .. }
-                        ),
+                        )),
+                        "violations": violations.iter().map(|v| {
+                            serde_json::json!({
+                                "rule_id": v.rule_id.as_str(),
+                                "message": v.message.as_str(),
+                            })
+                        }).collect::<Vec<_>>(),
                         "match_result": format!("{:?}", explanation.match_result),
                         "expected_children": explanation.expected_children.iter().map(|c| {
                             serde_json::json!({
@@ -66,17 +78,42 @@ impl InspectCommand {
                     });
                     println!("{}", serde_json::to_string_pretty(&json_output)?);
                 } else {
-                    println!("Path: {}", path);
+                    println!("Path: {}", normalized_path);
                     println!();
+
+                    if is_ignored {
+                        println!("  Status: IGNORED (by ignorePaths rule)");
+                        println!();
+                        println!(
+                            "  This path is excluded from validation by the ignorePaths rule."
+                        );
+                        return Ok(0);
+                    }
+
+                    if !violations.is_empty() {
+                        println!("  Status: VIOLATION(S) FOUND");
+                        println!();
+                        for v in &violations {
+                            println!("  - [{}] {}", v.rule_id, v.message);
+                        }
+                        println!();
+                    }
+
                     match &explanation.match_result {
                         MatchResult::Allowed => {
-                            println!("  Status: ALLOWED");
+                            if violations.is_empty() {
+                                println!("  Status: ALLOWED");
+                            }
                         }
                         MatchResult::AllowedParam { name, value } => {
-                            println!("  Status: ALLOWED (param {}={})", name, value);
+                            if violations.is_empty() {
+                                println!("  Status: ALLOWED (param {}={})", name, value);
+                            }
                         }
                         MatchResult::AllowedMany { values } => {
-                            println!("  Status: ALLOWED (many: {:?})", values);
+                            if violations.is_empty() {
+                                println!("  Status: ALLOWED (many: {:?})", values);
+                            }
                         }
                         MatchResult::Denied { reason, attempts } => {
                             println!("  Status: DENIED");

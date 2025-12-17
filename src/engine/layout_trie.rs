@@ -528,16 +528,22 @@ impl LayoutMatcher {
         }
 
         if current_depth >= max_depth {
+            let path_str = path_so_far.join("/");
             return MatchResult::NotInLayout {
                 nearest_valid: if path_so_far.is_empty() {
                     None
                 } else {
-                    Some(path_so_far.join("/"))
+                    Some(path_str.clone())
                 },
                 attempts: vec![MatchAttempt {
                     pattern: "recursive".to_string(),
                     matched: false,
-                    reason: Some(format!("exceeded max depth of {}", max_depth)),
+                    reason: Some(format!(
+                        "exceeded max depth of {} at level {} (path: {}). Hint: increase maxDepth in recursive() or restructure layout",
+                        max_depth,
+                        current_depth,
+                        if path_str.is_empty() { "<root>" } else { &path_str }
+                    )),
                 }],
             };
         }

@@ -113,6 +113,8 @@ repo-lint check --json                 # JSON output
 repo-lint check --sarif                # SARIF output for GitHub
 ```
 
+**Monorepo Support:** When your root config defines `workspaces` or multiple `repo-lint.config.ts` files are found, all workspace configs are automatically discovered and validated. Use `--scope` to filter to a specific workspace.
+
 ### `repo-lint scaffold`
 
 Generate compliant directory structures.
@@ -161,11 +163,29 @@ directory({
 })
 ```
 
+**Strict Mode Behavior:**
+- Without `strict: true`: Files/directories not matching any pattern are allowed (or produce warnings in "warn" mode)
+- With `strict: true`: Any file or directory in this directory that doesn't match a defined pattern will be **rejected** with an error
+- Use strict mode to ensure only explicitly defined files exist in critical directories
+
 ### File Case Validation
 
 ```typescript
 // Enforce kebab-case filenames
 $files: many(file({ pattern: "*.ts", case: "kebab" }))
+```
+
+**Pattern + Case Validation Behavior:**
+- `file({ pattern: "*.ts", case: "kebab" })` applies case validation **only to files that match the pattern**
+- Files NOT matching `*.ts` are handled by other rules in the layout (not rejected by this rule)
+- To reject all non-matching files, combine with `strict: true` on the parent directory
+
+Example:
+```typescript
+directory({
+  // Only kebab-case .ts files allowed, everything else rejected
+  $files: many(file({ pattern: "*.ts", case: "kebab" })),
+}, { strict: true })
 ```
 
 ### Case Styles

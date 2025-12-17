@@ -426,3 +426,135 @@ export default defineConfig({
     let result = parser.parse_file(&root.join("repo-lint.config.ts"));
     assert!(result.is_ok());
 }
+
+#[test]
+fn test_deeply_nested_recursive_patterns() {
+    use repo_lint::config::{CaseStyle, LayoutNode};
+    use repo_lint::engine::{LayoutMatcher, MatchResult};
+    use std::collections::HashMap;
+
+    let mut file_children = HashMap::new();
+    file_children.insert("page.tsx".to_string(), LayoutNode::file());
+    file_children.insert("layout.tsx".to_string(), LayoutNode::file().optional());
+    file_children.insert(
+        "$any".to_string(),
+        LayoutNode::many(None, LayoutNode::file_with_pattern("*")),
+    );
+
+    let param_child = LayoutNode::param("segment", CaseStyle::Any, LayoutNode::dir(file_children));
+
+    let recursive_node = LayoutNode::recursive_with_depth(10, param_child);
+
+    let mut app_children = HashMap::new();
+    app_children.insert("$routes".to_string(), recursive_node);
+
+    let mut src_children = HashMap::new();
+    src_children.insert("app".to_string(), LayoutNode::dir(app_children));
+
+    let mut root_children = HashMap::new();
+    root_children.insert("src".to_string(), LayoutNode::dir(src_children));
+
+    let matcher = LayoutMatcher::new(LayoutNode::dir(root_children));
+
+    let is_allowed = |path: &str| -> bool {
+        matches!(
+            matcher.match_path(Path::new(path)),
+            MatchResult::Allowed
+                | MatchResult::AllowedParam { .. }
+                | MatchResult::AllowedMany { .. }
+        )
+    };
+
+    assert!(
+        is_allowed("src/app/dashboard/page.tsx"),
+        "depth 1 should be allowed"
+    );
+
+    assert!(
+        is_allowed("src/app/dashboard/settings/page.tsx"),
+        "depth 2 should be allowed"
+    );
+
+    assert!(
+        is_allowed("src/app/dashboard/settings/profile/page.tsx"),
+        "depth 3 should be allowed"
+    );
+
+    assert!(
+        is_allowed("src/app/a/b/c/d/e/page.tsx"),
+        "depth 5 should be allowed"
+    );
+
+    assert!(
+        is_allowed("src/app/a/b/c/layout.tsx"),
+        "optional layout.tsx at depth 3 should be allowed"
+    );
+
+    assert!(
+        is_allowed("src/app/dashboard/some-file.ts"),
+        "any file via many(*) should be allowed"
+    );
+}
+
+#[test]
+fn test_recursive_with_nested_param_directory() {
+    use repo_lint::config::{CaseStyle, LayoutNode};
+    use repo_lint::engine::{LayoutMatcher, MatchResult};
+    use std::collections::HashMap;
+
+    let mut inner_dir = HashMap::new();
+    inner_dir.insert(
+        "$any".to_string(),
+        LayoutNode::many(None, LayoutNode::file_with_pattern("*")),
+    );
+
+    let nested_param =
+        LayoutNode::param("nested", CaseStyle::Any, LayoutNode::dir(inner_dir.clone()));
+
+    let mut inner_children = HashMap::new();
+    inner_children.insert(
+        "$nested".to_string(),
+        LayoutNode::recursive_with_depth(10, nested_param),
+    );
+    inner_children.insert(
+        "$any".to_string(),
+        LayoutNode::many(None, LayoutNode::file_with_pattern("*")),
+    );
+
+    let param_child = LayoutNode::param("app", CaseStyle::Kebab, LayoutNode::dir(inner_children));
+
+    let mut apps_children = HashMap::new();
+    apps_children.insert("$app".to_string(), param_child);
+
+    let mut root_children = HashMap::new();
+    root_children.insert("apps".to_string(), LayoutNode::dir(apps_children));
+
+    let matcher = LayoutMatcher::new(LayoutNode::dir(root_children));
+
+    let is_allowed = |path: &str| -> bool {
+        let result = matcher.match_path(Path::new(path));
+        matches!(
+            result,
+            MatchResult::Allowed
+                | MatchResult::AllowedParam { .. }
+                | MatchResult::AllowedMany { .. }
+        )
+    };
+
+    assert!(
+        is_allowed("apps/my-app/file.json"),
+        "direct file in app dir"
+    );
+    assert!(
+        is_allowed("apps/my-app/drizzle/file.json"),
+        "file at depth 1"
+    );
+    assert!(
+        is_allowed("apps/my-app/drizzle/meta/file.json"),
+        "file at depth 2"
+    );
+    assert!(
+        is_allowed("apps/my-app/drizzle/meta/deep/file.json"),
+        "file at depth 3"
+    );
+}

@@ -1,3 +1,4 @@
+use ignore::overrides::OverrideBuilder;
 use ignore::WalkBuilder;
 use std::path::{Path, PathBuf};
 
@@ -40,6 +41,31 @@ impl Walker {
         self
     }
 
+    fn build_overrides(&self) -> Option<ignore::overrides::Override> {
+        if self.custom_ignores.is_empty() {
+            return None;
+        }
+
+        let mut override_builder = OverrideBuilder::new(&self.root);
+        for pattern in &self.custom_ignores {
+            if pattern.contains("**") {
+                let _ = override_builder.add(&format!("!{}", pattern));
+                let trimmed = pattern.trim_end_matches("/**");
+                if trimmed != pattern {
+                    let _ = override_builder.add(&format!("!{}", trimmed));
+                }
+            } else if pattern.contains('/') || pattern.contains('*') {
+                let _ = override_builder.add(&format!("!{}", pattern));
+            } else {
+                let _ = override_builder.add(&format!("!{}", pattern));
+                let _ = override_builder.add(&format!("!{}/", pattern));
+                let _ = override_builder.add(&format!("!{}/**", pattern));
+            }
+        }
+
+        override_builder.build().ok()
+    }
+
     pub fn walk(&self) -> Vec<FileEntry> {
         let mut builder = WalkBuilder::new(&self.root);
 
@@ -55,8 +81,8 @@ impl Walker {
             builder.max_depth(Some(depth));
         }
 
-        for pattern in &self.custom_ignores {
-            builder.add_custom_ignore_filename(pattern);
+        if let Some(overrides) = self.build_overrides() {
+            builder.overrides(overrides);
         }
 
         let entries: Vec<FileEntry> = builder
@@ -98,6 +124,10 @@ impl Walker {
 
         if let Some(depth) = self.max_depth {
             builder.max_depth(Some(depth));
+        }
+
+        if let Some(overrides) = self.build_overrides() {
+            builder.overrides(overrides);
         }
 
         let root = self.root.clone();
@@ -144,6 +174,10 @@ impl Walker {
 
         if let Some(depth) = self.max_depth {
             builder.max_depth(Some(depth));
+        }
+
+        if let Some(overrides) = self.build_overrides() {
+            builder.overrides(overrides);
         }
 
         let root = self.root.clone();
@@ -259,5 +293,84 @@ mod tests {
             .unwrap_or(0);
 
         assert!(max_depth <= 2);
+    }
+
+    #[test]
+    fn test_ignore_directory() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        fs::create_dir_all(root.join("apps/web/src")).unwrap();
+        fs::write(root.join("apps/web/src/index.ts"), "").unwrap();
+        fs::create_dir_all(root.join("packages/ui/src")).unwrap();
+        fs::write(root.join("packages/ui/src/index.ts"), "").unwrap();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/main.ts"), "").unwrap();
+
+        let walker = Walker::new(root).add_ignore("apps").add_ignore("packages");
+        let entries = walker.walk();
+
+        let paths: Vec<String> = entries
+            .iter()
+            .map(|e| {
+                e.relative_path
+                    .to_string_lossy()
+                    .to_string()
+                    .replace('\\', "/")
+            })
+            .collect();
+
+        assert!(
+            !paths.iter().any(|p| p.starts_with("apps")),
+            "apps should be ignored, got: {:?}",
+            paths
+        );
+        assert!(
+            !paths.iter().any(|p| p.starts_with("packages")),
+            "packages should be ignored, got: {:?}",
+            paths
+        );
+        assert!(
+            paths.iter().any(|p| p.contains("src/main.ts")),
+            "src/main.ts should be present, got: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_ignore_glob_pattern() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        fs::create_dir_all(root.join("src/utils")).unwrap();
+        fs::write(root.join("src/utils/helper.ts"), "").unwrap();
+        fs::create_dir_all(root.join("src/services")).unwrap();
+        fs::write(root.join("src/services/api.ts"), "").unwrap();
+        fs::create_dir_all(root.join("lib/utils")).unwrap();
+        fs::write(root.join("lib/utils/common.ts"), "").unwrap();
+
+        let walker = Walker::new(root).add_ignore("**/utils/**");
+        let entries = walker.walk();
+
+        let paths: Vec<String> = entries
+            .iter()
+            .map(|e| {
+                e.relative_path
+                    .to_string_lossy()
+                    .to_string()
+                    .replace('\\', "/")
+            })
+            .collect();
+
+        assert!(
+            !paths.iter().any(|p| p.contains("utils")),
+            "utils directories should be ignored, got: {:?}",
+            paths
+        );
+        assert!(
+            paths.iter().any(|p| p.contains("services")),
+            "services should be present, got: {:?}",
+            paths
+        );
     }
 }
