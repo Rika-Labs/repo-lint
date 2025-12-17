@@ -12,11 +12,24 @@ pub struct MatchAttempt {
 #[derive(Debug, Clone)]
 pub enum MatchResult {
     Allowed,
-    AllowedParam { name: String, value: String },
-    AllowedMany { values: Vec<String> },
-    Denied { reason: String, attempts: Vec<MatchAttempt> },
-    NotInLayout { nearest_valid: Option<String>, attempts: Vec<MatchAttempt> },
-    MissingRequired { expected: Vec<String> },
+    AllowedParam {
+        name: String,
+        value: String,
+    },
+    AllowedMany {
+        values: Vec<String>,
+    },
+    Denied {
+        reason: String,
+        attempts: Vec<MatchAttempt>,
+    },
+    NotInLayout {
+        nearest_valid: Option<String>,
+        attempts: Vec<MatchAttempt>,
+    },
+    MissingRequired {
+        expected: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -123,7 +136,10 @@ impl LayoutMatcher {
                                                 format!("{:?}", case_style).to_lowercase()
                                             ),
                                             attempts: vec![MatchAttempt {
-                                                pattern: format!("$many({})", format!("{:?}", case_style).to_lowercase()),
+                                                pattern: format!(
+                                                    "$many({})",
+                                                    format!("{:?}", case_style).to_lowercase()
+                                                ),
                                                 matched: false,
                                                 reason: Some(format!(
                                                     "expected {} case",
@@ -172,11 +188,8 @@ impl LayoutMatcher {
                             }
                             LayoutNode::Either { variants } => {
                                 for variant in variants {
-                                    let result = self.match_segments(
-                                        segments,
-                                        variant,
-                                        path_so_far.clone(),
-                                    );
+                                    let result =
+                                        self.match_segments(segments, variant, path_so_far.clone());
                                     if matches!(
                                         result,
                                         MatchResult::Allowed
@@ -304,7 +317,10 @@ impl LayoutMatcher {
                                 format!("{:?}", case_style).to_lowercase()
                             ),
                             attempts: vec![MatchAttempt {
-                                pattern: format!("$many({})", format!("{:?}", case_style).to_lowercase()),
+                                pattern: format!(
+                                    "$many({})",
+                                    format!("{:?}", case_style).to_lowercase()
+                                ),
                                 matched: false,
                                 reason: Some(format!(
                                     "expected {} case",
@@ -317,22 +333,12 @@ impl LayoutMatcher {
                 self.match_segments(remaining, child, self.extend_path(&path_so_far, current))
             }
             LayoutNode::Recursive { max_depth, child } => {
-                self.match_recursive(
-                    segments,
-                    child,
-                    path_so_far,
-                    *max_depth,
-                    0,
-                )
+                self.match_recursive(segments, child, path_so_far, *max_depth, 0)
             }
             LayoutNode::Either { variants } => {
                 let mut all_attempts = Vec::new();
                 for (i, variant) in variants.iter().enumerate() {
-                    let result = self.match_segments(
-                        segments,
-                        variant,
-                        path_so_far.clone(),
-                    );
+                    let result = self.match_segments(segments, variant, path_so_far.clone());
                     match &result {
                         MatchResult::Allowed
                         | MatchResult::AllowedParam { .. }
@@ -396,7 +402,9 @@ impl LayoutMatcher {
         let result = self.match_segments(segments, child, path_so_far.clone());
         if matches!(
             result,
-            MatchResult::Allowed | MatchResult::AllowedParam { .. } | MatchResult::AllowedMany { .. }
+            MatchResult::Allowed
+                | MatchResult::AllowedParam { .. }
+                | MatchResult::AllowedMany { .. }
         ) {
             return result;
         }
@@ -489,12 +497,10 @@ impl LayoutMatcher {
                 })
                 .collect(),
             LayoutNode::Recursive { child, .. } => self.collect_expected(child),
-            LayoutNode::Either { variants } => {
-                variants
-                    .iter()
-                    .flat_map(|v| self.collect_expected(v))
-                    .collect()
-            }
+            LayoutNode::Either { variants } => variants
+                .iter()
+                .flat_map(|v| self.collect_expected(v))
+                .collect(),
             _ => Vec::new(),
         }
     }
@@ -617,13 +623,22 @@ mod tests {
         let matcher = LayoutMatcher::new(layout);
 
         let result = matcher.match_path(Path::new("app/dashboard/page.tsx"));
-        assert!(matches!(result, MatchResult::Allowed | MatchResult::AllowedParam { .. }));
+        assert!(matches!(
+            result,
+            MatchResult::Allowed | MatchResult::AllowedParam { .. }
+        ));
 
         let result = matcher.match_path(Path::new("app/dashboard/settings/page.tsx"));
-        assert!(matches!(result, MatchResult::Allowed | MatchResult::AllowedParam { .. }));
+        assert!(matches!(
+            result,
+            MatchResult::Allowed | MatchResult::AllowedParam { .. }
+        ));
 
         let result = matcher.match_path(Path::new("app/dashboard/settings/profile/page.tsx"));
-        assert!(matches!(result, MatchResult::Allowed | MatchResult::AllowedParam { .. }));
+        assert!(matches!(
+            result,
+            MatchResult::Allowed | MatchResult::AllowedParam { .. }
+        ));
     }
 
     #[test]
@@ -646,10 +661,16 @@ mod tests {
         let matcher = LayoutMatcher::new(layout);
 
         let result = matcher.match_path(Path::new("app/a/page.tsx"));
-        assert!(matches!(result, MatchResult::Allowed | MatchResult::AllowedParam { .. }));
+        assert!(matches!(
+            result,
+            MatchResult::Allowed | MatchResult::AllowedParam { .. }
+        ));
 
         let result = matcher.match_path(Path::new("app/a/b/page.tsx"));
-        assert!(matches!(result, MatchResult::Allowed | MatchResult::AllowedParam { .. }));
+        assert!(matches!(
+            result,
+            MatchResult::Allowed | MatchResult::AllowedParam { .. }
+        ));
 
         let result = matcher.match_path(Path::new("app/a/b/c/page.tsx"));
         assert!(matches!(result, MatchResult::NotInLayout { .. }));
@@ -665,7 +686,10 @@ mod tests {
         let either = LayoutNode::either(vec![file_variant, dir_variant]);
 
         let mut routes_children = HashMap::new();
-        routes_children.insert("$segment".to_string(), LayoutNode::param("segment", CaseStyle::Kebab, either));
+        routes_children.insert(
+            "$segment".to_string(),
+            LayoutNode::param("segment", CaseStyle::Kebab, either),
+        );
 
         let mut root_children = HashMap::new();
         root_children.insert("routes".to_string(), LayoutNode::dir(routes_children));
@@ -674,7 +698,10 @@ mod tests {
         let matcher = LayoutMatcher::new(layout);
 
         let result = matcher.match_path(Path::new("routes/dashboard/index.ts"));
-        assert!(matches!(result, MatchResult::Allowed | MatchResult::AllowedParam { .. }));
+        assert!(matches!(
+            result,
+            MatchResult::Allowed | MatchResult::AllowedParam { .. }
+        ));
     }
 
     #[test]
@@ -718,7 +745,9 @@ mod tests {
         match result {
             MatchResult::NotInLayout { attempts, .. } => {
                 assert!(!attempts.is_empty());
-                assert!(attempts.iter().any(|a| a.pattern == "src" || a.pattern == "lib"));
+                assert!(attempts
+                    .iter()
+                    .any(|a| a.pattern == "src" || a.pattern == "lib"));
             }
             _ => panic!("Expected NotInLayout result"),
         }
@@ -744,7 +773,11 @@ mod tests {
         let matcher = LayoutMatcher::new(layout);
 
         let result = matcher.match_path(Path::new("app/a/b/c/page.tsx"));
-        assert!(matches!(result, MatchResult::NotInLayout { .. }), "Expected NotInLayout result, got {:?}", result);
+        assert!(
+            matches!(result, MatchResult::NotInLayout { .. }),
+            "Expected NotInLayout result, got {:?}",
+            result
+        );
     }
 
     #[test]
@@ -794,12 +827,21 @@ mod tests {
         let matcher = LayoutMatcher::new(layout);
 
         let result = matcher.match_path(Path::new("app/dashboard/settings/profile/page.tsx"));
-        assert!(matches!(result, MatchResult::Allowed | MatchResult::AllowedParam { .. }));
+        assert!(matches!(
+            result,
+            MatchResult::Allowed | MatchResult::AllowedParam { .. }
+        ));
 
         let result = matcher.match_path(Path::new("app/dashboard/settings/profile/layout.tsx"));
-        assert!(matches!(result, MatchResult::Allowed | MatchResult::AllowedParam { .. }));
+        assert!(matches!(
+            result,
+            MatchResult::Allowed | MatchResult::AllowedParam { .. }
+        ));
 
         let result = matcher.match_path(Path::new("app/a/b/c/d/e/f/g/page.tsx"));
-        assert!(matches!(result, MatchResult::Allowed | MatchResult::AllowedParam { .. }));
+        assert!(matches!(
+            result,
+            MatchResult::Allowed | MatchResult::AllowedParam { .. }
+        ));
     }
 }

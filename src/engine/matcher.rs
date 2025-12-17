@@ -94,7 +94,10 @@ impl FileMatcher {
                     attempts,
                 });
             }
-            MatchResult::NotInLayout { nearest_valid, attempts } => {
+            MatchResult::NotInLayout {
+                nearest_valid,
+                attempts,
+            } => {
                 let msg = if let Some(nearest) = nearest_valid {
                     format!("path not defined in layout (nearest valid: {})", nearest)
                 } else {

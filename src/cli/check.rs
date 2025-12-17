@@ -20,7 +20,10 @@ pub struct CheckArgs {
     #[arg(long)]
     pub fix: bool,
 
-    #[arg(long, help = "Only validate paths under this scope (e.g., apps/sentinel)")]
+    #[arg(
+        long,
+        help = "Only validate paths under this scope (e.g., apps/sentinel)"
+    )]
     pub scope: Option<String>,
 }
 

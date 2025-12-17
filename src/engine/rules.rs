@@ -271,10 +271,7 @@ mod tests {
         let config = RulesConfig {
             forbid_paths: vec![],
             forbid_names: vec![],
-            ignore_paths: vec![
-                "**/node_modules/**".to_string(),
-                "**/.turbo/**".to_string(),
-            ],
+            ignore_paths: vec!["**/node_modules/**".to_string(), "**/.turbo/**".to_string()],
         };
 
         let rules = CompiledRules::compile(&config).unwrap();

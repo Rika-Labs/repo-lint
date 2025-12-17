@@ -85,12 +85,19 @@ impl InspectCommand {
                                 println!("  Tried to match:");
                                 for attempt in attempts {
                                     let status = if attempt.matched { "✓" } else { "✗" };
-                                    let reason = attempt.reason.as_ref().map(|r| format!(" ({})", r)).unwrap_or_default();
+                                    let reason = attempt
+                                        .reason
+                                        .as_ref()
+                                        .map(|r| format!(" ({})", r))
+                                        .unwrap_or_default();
                                     println!("    {} {}{}", status, attempt.pattern, reason);
                                 }
                             }
                         }
-                        MatchResult::NotInLayout { nearest_valid, attempts } => {
+                        MatchResult::NotInLayout {
+                            nearest_valid,
+                            attempts,
+                        } => {
                             println!("  Status: NOT IN LAYOUT");
                             if let Some(nearest) = nearest_valid {
                                 println!("  Nearest valid parent: {}", nearest);
@@ -99,7 +106,11 @@ impl InspectCommand {
                                 println!("  Tried to match:");
                                 for attempt in attempts {
                                     let status = if attempt.matched { "✓" } else { "✗" };
-                                    let reason = attempt.reason.as_ref().map(|r| format!(" ({})", r)).unwrap_or_default();
+                                    let reason = attempt
+                                        .reason
+                                        .as_ref()
+                                        .map(|r| format!(" ({})", r))
+                                        .unwrap_or_default();
                                     println!("    {} {}{}", status, attempt.pattern, reason);
                                 }
                             }
