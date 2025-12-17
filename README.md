@@ -17,28 +17,23 @@ A high-performance filesystem layout linter with TypeScript DSL config.
 
 ## Installation
 
-### npm (recommended)
-
 ```bash
 npm install @rikalabs/repo-lint
 ```
 
-This installs both the TypeScript types (for config autocomplete) and the binary.
-
-Run with:
 ```bash
-npx repo-lint check
+pnpm add @rikalabs/repo-lint
 ```
 
-### Cargo
-
 ```bash
-cargo install repo-lint
+yarn add @rikalabs/repo-lint
 ```
 
-### Download binary
+```bash
+bun add @rikalabs/repo-lint
+```
 
-Download pre-built binaries from [GitHub Releases](https://github.com/Rika-Labs/repo-lint/releases).
+This installs both the TypeScript types (for config autocomplete) and the CLI binary.
 
 ## Quick Start
 
