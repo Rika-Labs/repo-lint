@@ -367,10 +367,8 @@ impl ConfigParser {
                     if let PropOrSpread::Prop(prop) = prop {
                         if let Prop::KeyValue(kv) = &**prop {
                             let key = self.get_prop_name(&kv.key)?;
-                            match key.as_str() {
-                                "routeCase" => route_case = self.eval_case_style(&kv.value)?,
-                                // "requireTests" => require_tests = self.expect_bool(&kv.value)?,
-                                _ => {}
+                            if key == "routeCase" {
+                                route_case = self.eval_case_style(&kv.value)?;
                             }
                         }
                     }
