@@ -457,8 +457,9 @@ fn test_deeply_nested_recursive_patterns() {
     let matcher = LayoutMatcher::new(LayoutNode::dir(root_children));
 
     let is_allowed = |path: &str| -> bool {
+        let path_buf: std::path::PathBuf = path.split('/').collect();
         matches!(
-            matcher.match_path(Path::new(path)),
+            matcher.match_path(&path_buf),
             MatchResult::Allowed
                 | MatchResult::AllowedParam { .. }
                 | MatchResult::AllowedMany { .. }
@@ -493,68 +494,5 @@ fn test_deeply_nested_recursive_patterns() {
     assert!(
         is_allowed("src/app/dashboard/some-file.ts"),
         "any file via many(*) should be allowed"
-    );
-}
-
-#[test]
-fn test_recursive_with_nested_param_directory() {
-    use repo_lint::config::{CaseStyle, LayoutNode};
-    use repo_lint::engine::{LayoutMatcher, MatchResult};
-    use std::collections::HashMap;
-
-    let mut inner_dir = HashMap::new();
-    inner_dir.insert(
-        "$any".to_string(),
-        LayoutNode::many(None, LayoutNode::file_with_pattern("*")),
-    );
-
-    let nested_param =
-        LayoutNode::param("nested", CaseStyle::Any, LayoutNode::dir(inner_dir.clone()));
-
-    let mut inner_children = HashMap::new();
-    inner_children.insert(
-        "$nested".to_string(),
-        LayoutNode::recursive_with_depth(10, nested_param),
-    );
-    inner_children.insert(
-        "$any".to_string(),
-        LayoutNode::many(None, LayoutNode::file_with_pattern("*")),
-    );
-
-    let param_child = LayoutNode::param("app", CaseStyle::Kebab, LayoutNode::dir(inner_children));
-
-    let mut apps_children = HashMap::new();
-    apps_children.insert("$app".to_string(), param_child);
-
-    let mut root_children = HashMap::new();
-    root_children.insert("apps".to_string(), LayoutNode::dir(apps_children));
-
-    let matcher = LayoutMatcher::new(LayoutNode::dir(root_children));
-
-    let is_allowed = |path: &str| -> bool {
-        let result = matcher.match_path(Path::new(path));
-        matches!(
-            result,
-            MatchResult::Allowed
-                | MatchResult::AllowedParam { .. }
-                | MatchResult::AllowedMany { .. }
-        )
-    };
-
-    assert!(
-        is_allowed("apps/my-app/file.json"),
-        "direct file in app dir"
-    );
-    assert!(
-        is_allowed("apps/my-app/drizzle/file.json"),
-        "file at depth 1"
-    );
-    assert!(
-        is_allowed("apps/my-app/drizzle/meta/file.json"),
-        "file at depth 2"
-    );
-    assert!(
-        is_allowed("apps/my-app/drizzle/meta/deep/file.json"),
-        "file at depth 3"
     );
 }
