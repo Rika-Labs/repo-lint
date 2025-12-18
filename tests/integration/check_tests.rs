@@ -213,6 +213,66 @@ fn test_check_sarif_output() {
 }
 
 #[test]
+fn test_check_traverses_optional_nested_layout_from_import() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    // shared.ts exports both `nested` and `layout`, where `layout` references `nested`.
+    fs::write(
+        root.join("shared.ts"),
+        r#"
+import { directory, file, many, optional, param } from "repo-lint";
+
+export const nested = directory({
+  $file: many(file("*.ts")),
+});
+
+export const layout = directory({
+  $domain: param({ case: "kebab" }, directory({
+    subdir: optional(nested),
+  })),
+});
+"#,
+    )
+    .unwrap();
+
+    let config_path = create_config(
+        root,
+        r#"
+import { defineConfig } from "repo-lint";
+import { layout } from "./shared";
+
+export default defineConfig({
+  mode: "strict",
+  layout,
+});
+"#,
+    );
+
+    // Filesystem structure that should be allowed by the layout.
+    fs::create_dir_all(root.join("domain-name/subdir")).unwrap();
+    fs::write(root.join("domain-name/subdir/file.ts"), "").unwrap();
+
+    let args = CheckArgs {
+        path: root.to_path_buf(),
+        changed: false,
+        base: "HEAD".to_string(),
+        fix: false,
+    };
+
+    let result = CheckCommand::run(
+        &args,
+        config_path.to_str().unwrap(),
+        OutputFormat::Json,
+        false,
+        false,
+    );
+
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), 0);
+}
+
+#[test]
 fn test_check_missing_config() {
     let temp = TempDir::new().unwrap();
     let root = temp.path();

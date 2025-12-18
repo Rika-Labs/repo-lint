@@ -533,29 +533,98 @@ impl ConfigParser {
 
         for prop in &obj.props {
             if let PropOrSpread::Prop(prop) = prop {
-                if let Prop::KeyValue(kv) = &**prop {
-                    let key = self.get_prop_name(&kv.key)?;
-                    match key.as_str() {
-                        "mode" => mode = self.eval_mode(&kv.value)?,
-                        "layout" => {
-                            layout = Some(self.eval_layout_node(
-                                &kv.value,
-                                variables,
-                                imported_layouts,
-                            )?)
+                match &**prop {
+                    Prop::KeyValue(kv) => {
+                        let key = self.get_prop_name(&kv.key)?;
+                        match key.as_str() {
+                            "mode" => mode = self.eval_mode(&kv.value)?,
+                            "layout" => {
+                                layout = Some(self.eval_layout_node(
+                                    &kv.value,
+                                    variables,
+                                    imported_layouts,
+                                )?)
+                            }
+                            "rules" => rules = self.eval_rules(&kv.value, variables)?,
+                            "boundaries" => {
+                                boundaries = Some(self.eval_boundaries(&kv.value, variables)?)
+                            }
+                            "deps" => deps = Some(self.eval_deps(&kv.value, variables)?),
+                            "ignore" => ignore = self.eval_string_array(&kv.value)?,
+                            "useGitignore" => use_gitignore = self.eval_bool(&kv.value)?,
+                            "workspaces" => workspaces = self.eval_string_array(&kv.value)?,
+                            "dependencies" => dependencies = self.eval_dependencies(&kv.value)?,
+                            "mirror" => mirror = self.eval_mirror(&kv.value, variables)?,
+                            "when" => when = self.eval_when(&kv.value, variables, imported_when)?,
+                            "extends" => extends = Some(self.expect_string(&kv.value)?),
+                            _ => {}
                         }
-                        "rules" => rules = self.eval_rules(&kv.value)?,
-                        "boundaries" => boundaries = Some(self.eval_boundaries(&kv.value)?),
-                        "deps" => deps = Some(self.eval_deps(&kv.value)?),
-                        "ignore" => ignore = self.eval_string_array(&kv.value)?,
-                        "useGitignore" => use_gitignore = self.eval_bool(&kv.value)?,
-                        "workspaces" => workspaces = self.eval_string_array(&kv.value)?,
-                        "dependencies" => dependencies = self.eval_dependencies(&kv.value)?,
-                        "mirror" => mirror = self.eval_mirror(&kv.value)?,
-                        "when" => when = self.eval_when(&kv.value, variables, imported_when)?,
-                        "extends" => extends = Some(self.expect_string(&kv.value)?),
-                        _ => {}
                     }
+                    Prop::Shorthand(ident) => {
+                        let key = ident.sym.to_string();
+                        match key.as_str() {
+                            "layout" => {
+                                if let Some(layout_node) = imported_layouts.get(&key) {
+                                    layout = Some(layout_node.clone());
+                                } else if let Some(var_expr) = variables.get(&key) {
+                                    layout = Some(self.eval_layout_node(
+                                        var_expr,
+                                        variables,
+                                        imported_layouts,
+                                    )?);
+                                } else {
+                                    let loc = self.get_expr_location(expr);
+                                    return Err(ParseError::UnsupportedExpression {
+                                        line: loc.0,
+                                        col: loc.1,
+                                        message: format!(
+                                            "Unknown shorthand value for layout: {}",
+                                            key
+                                        ),
+                                    });
+                                }
+                            }
+                            "rules" => {
+                                if let Some(var_expr) = variables.get(&key) {
+                                    rules = self.eval_rules(var_expr, variables)?;
+                                }
+                            }
+                            "boundaries" => {
+                                if let Some(var_expr) = variables.get(&key) {
+                                    boundaries = Some(self.eval_boundaries(var_expr, variables)?);
+                                }
+                            }
+                            "deps" => {
+                                if let Some(var_expr) = variables.get(&key) {
+                                    deps = Some(self.eval_deps(var_expr, variables)?);
+                                }
+                            }
+                            "mirror" => {
+                                if let Some(var_expr) = variables.get(&key) {
+                                    mirror = self.eval_mirror(var_expr, variables)?;
+                                }
+                            }
+                            "when" => {
+                                if let Some(w) = imported_when.get(&key) {
+                                    when = w.clone();
+                                } else if let Some(var_expr) = variables.get(&key) {
+                                    when = self.eval_when(var_expr, variables, imported_when)?;
+                                }
+                            }
+                            "ignore" => {
+                                if let Some(var_expr) = variables.get(&key) {
+                                    ignore = self.eval_string_array(var_expr)?;
+                                }
+                            }
+                            "workspaces" => {
+                                if let Some(var_expr) = variables.get(&key) {
+                                    workspaces = self.eval_string_array(var_expr)?;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -658,11 +727,31 @@ impl ConfigParser {
             let obj = self.expect_object(&arg.expr)?;
             for prop in &obj.props {
                 if let PropOrSpread::Prop(prop) = prop {
-                    if let Prop::KeyValue(kv) = &**prop {
-                        let key = self.get_prop_name(&kv.key)?;
-                        let value =
-                            self.eval_layout_node(&kv.value, variables, imported_layouts)?;
-                        children.insert(key, value);
+                    match &**prop {
+                        Prop::KeyValue(kv) => {
+                            let key = self.get_prop_name(&kv.key)?;
+                            let value =
+                                self.eval_layout_node(&kv.value, variables, imported_layouts)?;
+                            children.insert(key, value);
+                        }
+                        Prop::Shorthand(ident) => {
+                            let key = ident.sym.to_string();
+                            if let Some(layout) = imported_layouts.get(&key) {
+                                children.insert(key, layout.clone());
+                            } else if let Some(var_expr) = variables.get(&key) {
+                                let value =
+                                    self.eval_layout_node(var_expr, variables, imported_layouts)?;
+                                children.insert(key, value);
+                            } else {
+                                let loc = self.get_expr_location(&arg.expr);
+                                return Err(ParseError::UnsupportedExpression {
+                                    line: loc.0,
+                                    col: loc.1,
+                                    message: format!("Unknown shorthand variable: {}", key),
+                                });
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -947,7 +1036,17 @@ impl ConfigParser {
         }
     }
 
-    fn eval_rules(&self, expr: &Expr) -> Result<RulesConfig, ParseError> {
+    fn eval_rules(
+        &self,
+        expr: &Expr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<RulesConfig, ParseError> {
+        if let Expr::Ident(ident) = expr {
+            let name = ident.sym.as_ref();
+            if let Some(var_expr) = variables.get(name) {
+                return self.eval_rules(var_expr, variables);
+            }
+        }
         let obj = self.expect_object(expr)?;
         let mut rules = RulesConfig::default();
 
@@ -968,7 +1067,17 @@ impl ConfigParser {
         Ok(rules)
     }
 
-    fn eval_boundaries(&self, expr: &Expr) -> Result<BoundariesConfig, ParseError> {
+    fn eval_boundaries(
+        &self,
+        expr: &Expr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<BoundariesConfig, ParseError> {
+        if let Expr::Ident(ident) = expr {
+            let name = ident.sym.as_ref();
+            if let Some(var_expr) = variables.get(name) {
+                return self.eval_boundaries(var_expr, variables);
+            }
+        }
         let obj = self.expect_object(expr)?;
         let mut modules = String::new();
         let mut public_api = String::new();
@@ -995,7 +1104,17 @@ impl ConfigParser {
         })
     }
 
-    fn eval_deps(&self, expr: &Expr) -> Result<DepsConfig, ParseError> {
+    fn eval_deps(
+        &self,
+        expr: &Expr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<DepsConfig, ParseError> {
+        if let Expr::Ident(ident) = expr {
+            let name = ident.sym.as_ref();
+            if let Some(var_expr) = variables.get(name) {
+                return self.eval_deps(var_expr, variables);
+            }
+        }
         let obj = self.expect_object(expr)?;
         let mut deps = DepsConfig::default();
 
@@ -1067,7 +1186,17 @@ impl ConfigParser {
         Ok(deps)
     }
 
-    fn eval_mirror(&self, expr: &Expr) -> Result<Vec<MirrorConfig>, ParseError> {
+    fn eval_mirror(
+        &self,
+        expr: &Expr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<Vec<MirrorConfig>, ParseError> {
+        if let Expr::Ident(ident) = expr {
+            let name = ident.sym.as_ref();
+            if let Some(var_expr) = variables.get(name) {
+                return self.eval_mirror(var_expr, variables);
+            }
+        }
         let arr = self.expect_array(expr)?;
         let mut mirrors = Vec::new();
 
@@ -1738,5 +1867,86 @@ export default defineConfig({
             ir.when.get("src/index.ts").unwrap().requires.as_slice(),
             &["src/app.ts"]
         );
+    }
+
+    #[test]
+    fn test_optional_imported_nested_layout_is_traversed_in_matching() {
+        use crate::engine::layout_trie::{LayoutMatcher, MatchResult};
+
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        fs::write(
+            root.join("shared.ts"),
+            r#"
+import { directory, file, many, optional, param } from "repo-lint";
+
+export const nested = directory({
+  $file: many(file("*.ts")),
+});
+
+export const layout = directory({
+  $domain: param({ case: "kebab" }, directory({
+    subdir: optional(nested),
+  })),
+});
+"#,
+        )
+        .unwrap();
+
+        fs::write(
+            root.join("repo-lint.config.ts"),
+            r#"
+import { defineConfig } from "repo-lint";
+import { layout } from "./shared";
+
+export default defineConfig({
+  layout,
+});
+"#,
+        )
+        .unwrap();
+
+        let parser = ConfigParser::new();
+        let ir = parser
+            .parse_file(&root.join("repo-lint.config.ts"))
+            .unwrap();
+        let layout = ir.layout.unwrap();
+
+        let matcher = LayoutMatcher::new(Some(layout));
+        let result = matcher.match_path(Path::new("domain-name/subdir/file.ts"));
+        assert!(matches!(
+            result,
+            MatchResult::AllowedMany { .. }
+                | MatchResult::AllowedParam { .. }
+                | MatchResult::Allowed
+        ));
+    }
+
+    #[test]
+    fn test_directory_children_support_shorthand_values() {
+        let parser = ConfigParser::new();
+        let config = r#"
+import { defineConfig, directory, file } from "repo-lint";
+
+const leaf = directory({
+  "index.ts": file(),
+});
+
+export default defineConfig({
+  layout: directory({
+    src: leaf,
+  }),
+});
+"#;
+
+        let ir = parser.parse_string(config, "test.ts").unwrap();
+        let Some(LayoutNode::Dir { children, .. }) = ir.layout else {
+            panic!("expected layout");
+        };
+        let LayoutNode::Dir { children, .. } = children.get("src").unwrap() else {
+            panic!("expected src to be a dir");
+        };
+        assert!(children.contains_key("index.ts"));
     }
 }
