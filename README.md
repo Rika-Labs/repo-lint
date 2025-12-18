@@ -190,7 +190,7 @@ export default defineConfig({
 | Function | Description |
 |----------|-------------|
 | `directory({...})` | Define a directory with children (alias: `dir`) |
-| `file(pattern?)` | Define a file, optionally with glob pattern |
+| `file(pattern?)` | Define a file, optionally with glob pattern (supports brace expansion like `*.{ts,tsx}`) |
 | `file({ pattern, case })` | Define a file with case validation |
 | `optional(node)` | Mark a node as optional (alias: `opt`) |
 | `required(node)` | Mark a node as required (must exist) |
@@ -220,6 +220,12 @@ directory({
 ```typescript
 // Enforce kebab-case filenames
 $files: many(file({ pattern: "*.ts", case: "kebab" }))
+
+// Brace expansion for multiple extensions
+$files: many(file("*.{ts,tsx}"))
+
+// Combine pattern and case validation
+$files: many(file({ pattern: "*.{ts,tsx}", case: "kebab" }))
 ```
 
 **Pattern + Case Validation Behavior:**
@@ -377,11 +383,11 @@ repo-lint is built for speed, processing large codebases in milliseconds.
 
 | Benchmark | Files | Time | Throughput |
 |-----------|-------|------|------------|
-| Small | 51k | 54ms | 942k/sec |
-| Medium | 102k | 107ms | **955k/sec** |
-| Large | 204k | 228ms | **894k/sec** |
+| Small | 51k | 58ms | 869k/sec |
+| Medium | 102k | 121ms | **845k/sec** |
+| Large | 204k | 235ms | **869k/sec** |
 
-**500k files in ~0.5 seconds** - comparable to ripgrep's directory traversal speed.
+**500k files in ~0.6 seconds** - comparable to ripgrep's directory traversal speed.
 
 ### Performance Optimizations
 

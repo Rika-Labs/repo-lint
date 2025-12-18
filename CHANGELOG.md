@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.9] - 2024-12-17
+
+### Fixed
+
+- **Brace Expansion in File Patterns**: Fixed glob matching to properly support brace expansion patterns like `*.{ts,tsx}`. Previously, patterns with braces were treated as literal strings instead of glob alternations.
+- **Complex Glob Patterns**: Replaced simple pattern matching with `fast_glob` for full glob support including character classes, nested braces, and other glob features.
+
+## [0.3.8] - 2024-12-17
+
+### Fixed
+
+- **Re-exported Layouts**: Fixed support for `export { layout } from './module'` syntax. Layouts re-exported from intermediate modules are now properly resolved.
+- **Local Const Resolution in Imports**: When importing a layout that references local const variables, those consts are now correctly resolved within the imported file's scope.
+- **Named Export Support**: Added support for `export { localVar }` syntax (local variable re-exports) in addition to `export const`.
+
+## [0.3.7] - 2024-12-17
+
+### Fixed
+
+- **Expected Children Traversal**: Fixed `get_expected_children` to correctly traverse param nodes at directory level.
+
+## [0.3.6] - 2024-12-17
+
+### Fixed
+
+- **Object Shorthand Support**: Fixed parsing of object shorthand syntax in directory children (e.g., `directory({ layout })` where `layout` is a variable).
+
+## [0.3.5] - 2024-12-17
+
+### Fixed
+
+- **Imported Layouts with When**: Fixed support for importing `layout` and `when` configurations from other modules.
+
 ## [0.3.4] - 2024-12-17
 
 ### Fixed
