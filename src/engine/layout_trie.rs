@@ -617,7 +617,9 @@ impl LayoutMatcher {
                 }
                 for (key, child) in children {
                     if key.starts_with('$') {
-                        return Self::get_expected_at(remaining, child);
+                        // Do NOT consume the current segment here.
+                        // The param/many/recursive node itself is responsible for consuming it.
+                        return Self::get_expected_at(segments, child);
                     }
                 }
                 Vec::new()
@@ -686,6 +688,38 @@ mod tests {
         root_children.insert("src".to_string(), LayoutNode::dir(src_children));
 
         LayoutNode::dir(root_children)
+    }
+
+    #[test]
+    fn test_get_expected_children_consumes_param_at_dir_level_correctly() {
+        // Layout: routes/$route/components/$component (many)
+        // Query expected children at routes/my-route/components should show $component (not siblings).
+        let mut component_children = HashMap::new();
+        component_children.insert(
+            "$component".to_string(),
+            LayoutNode::many(Some(CaseStyle::Kebab), LayoutNode::file()),
+        );
+
+        let mut route_children = HashMap::new();
+        route_children.insert(
+            "components".to_string(),
+            LayoutNode::dir(component_children).optional(),
+        );
+
+        let mut routes_children = HashMap::new();
+        routes_children.insert(
+            "$route".to_string(),
+            LayoutNode::param("route", CaseStyle::Kebab, LayoutNode::dir(route_children)),
+        );
+
+        let mut root_children = HashMap::new();
+        root_children.insert("routes".to_string(), LayoutNode::dir(routes_children));
+
+        let matcher = LayoutMatcher::new(Some(LayoutNode::dir(root_children)));
+        let expected = matcher.get_expected_children(Path::new("routes/my-route/components"));
+
+        assert!(expected.iter().any(|c| c.name == "$component"));
+        assert!(!expected.iter().any(|c| c.name == "components"));
     }
 
     #[test]
