@@ -338,32 +338,147 @@ impl ConfigParser {
                         }
                     }
                 }
+                // Handle re-exports: export { x } from './module'
+                ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named_export)) => {
+                    if let Some(src) = &named_export.src {
+                        let specifier = src.value.as_ref();
+                        if let Some(import_path) = self.resolve_import(path, specifier) {
+                            if let Ok(dep_exports) = self.parse_module_exports(&import_path) {
+                                for spec in &named_export.specifiers {
+                                    if let ExportSpecifier::Named(named) = spec {
+                                        let orig_name = match &named.orig {
+                                            ModuleExportName::Ident(id) => id.sym.to_string(),
+                                            ModuleExportName::Str(s) => s.value.to_string(),
+                                        };
+                                        let exported_name = named
+                                            .exported
+                                            .as_ref()
+                                            .map(|e| match e {
+                                                ModuleExportName::Ident(id) => id.sym.to_string(),
+                                                ModuleExportName::Str(s) => s.value.to_string(),
+                                            })
+                                            .unwrap_or_else(|| orig_name.clone());
+
+                                        if let Some(layout) = dep_exports.layouts.get(&orig_name) {
+                                            imported_layouts
+                                                .insert(exported_name.clone(), layout.clone());
+                                        }
+                                        if let Some(when) = dep_exports.when.get(&orig_name) {
+                                            imported_when.insert(exported_name, when.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 _ => {}
             }
         }
 
         // Second pass: evaluate exports.
         for item in &module.body {
-            if let ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) = item {
-                if let Decl::Var(var_decl) = &export.decl {
-                    for decl in &var_decl.decls {
-                        if let Pat::Ident(ident) = &decl.name {
-                            if let Some(init) = &decl.init {
-                                let name = ident.sym.to_string();
-                                if let Ok(layout) =
-                                    self.eval_layout_node(init, &variables, &imported_layouts)
-                                {
-                                    exports.layouts.insert(name.clone(), layout);
-                                    continue;
-                                }
+            match item {
+                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                    if let Decl::Var(var_decl) = &export.decl {
+                        for decl in &var_decl.decls {
+                            if let Pat::Ident(ident) = &decl.name {
+                                if let Some(init) = &decl.init {
+                                    let name = ident.sym.to_string();
+                                    if let Ok(layout) =
+                                        self.eval_layout_node(init, &variables, &imported_layouts)
+                                    {
+                                        exports.layouts.insert(name.clone(), layout);
+                                        continue;
+                                    }
 
-                                if let Ok(when) = self.eval_when(init, &variables, &imported_when) {
-                                    exports.when.insert(name, when);
+                                    if let Ok(when) =
+                                        self.eval_when(init, &variables, &imported_when)
+                                    {
+                                        exports.when.insert(name, when);
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                // Handle re-exports: export { x } from './module'
+                // The layouts/when were already gathered in first pass into imported_layouts/imported_when
+                // Now we need to add them to the exports
+                ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named_export)) => {
+                    if named_export.src.is_some() {
+                        // Re-export from another module
+                        for spec in &named_export.specifiers {
+                            if let ExportSpecifier::Named(named) = spec {
+                                let orig_name = match &named.orig {
+                                    ModuleExportName::Ident(id) => id.sym.to_string(),
+                                    ModuleExportName::Str(s) => s.value.to_string(),
+                                };
+                                let exported_name = named
+                                    .exported
+                                    .as_ref()
+                                    .map(|e| match e {
+                                        ModuleExportName::Ident(id) => id.sym.to_string(),
+                                        ModuleExportName::Str(s) => s.value.to_string(),
+                                    })
+                                    .unwrap_or_else(|| orig_name.clone());
+
+                                // The layout was added to imported_layouts in the first pass
+                                if let Some(layout) = imported_layouts.get(&exported_name) {
+                                    exports
+                                        .layouts
+                                        .insert(exported_name.clone(), layout.clone());
+                                }
+                                if let Some(when) = imported_when.get(&exported_name) {
+                                    exports.when.insert(exported_name, when.clone());
+                                }
+                            }
+                        }
+                    } else {
+                        // Local re-export: export { localVar }
+                        for spec in &named_export.specifiers {
+                            if let ExportSpecifier::Named(named) = spec {
+                                let orig_name = match &named.orig {
+                                    ModuleExportName::Ident(id) => id.sym.to_string(),
+                                    ModuleExportName::Str(s) => s.value.to_string(),
+                                };
+                                let exported_name = named
+                                    .exported
+                                    .as_ref()
+                                    .map(|e| match e {
+                                        ModuleExportName::Ident(id) => id.sym.to_string(),
+                                        ModuleExportName::Str(s) => s.value.to_string(),
+                                    })
+                                    .unwrap_or_else(|| orig_name.clone());
+
+                                // Check if it's an imported layout
+                                if let Some(layout) = imported_layouts.get(&orig_name) {
+                                    exports
+                                        .layouts
+                                        .insert(exported_name.clone(), layout.clone());
+                                } else if let Some(var_expr) = variables.get(&orig_name) {
+                                    // It's a local variable being exported
+                                    if let Ok(layout) = self.eval_layout_node(
+                                        var_expr,
+                                        &variables,
+                                        &imported_layouts,
+                                    ) {
+                                        exports.layouts.insert(exported_name.clone(), layout);
+                                    } else if let Ok(when) =
+                                        self.eval_when(var_expr, &variables, &imported_when)
+                                    {
+                                        exports.when.insert(exported_name.clone(), when);
+                                    }
+                                }
+
+                                if let Some(when) = imported_when.get(&orig_name) {
+                                    exports.when.insert(exported_name.clone(), when.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -1948,5 +2063,249 @@ export default defineConfig({
             panic!("expected src to be a dir");
         };
         assert!(children.contains_key("index.ts"));
+    }
+
+    #[test]
+    fn test_imported_layout_references_local_const_in_same_file() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        let config_dir = root.join("packages/config/repo-lint");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        // The key difference: featureModule is NOT exported, just a local const
+        fs::write(
+            config_dir.join("nextjs.ts"),
+            r#"
+import { directory, param, file } from "repo-lint";
+
+// LOCAL const (not exported!)
+const featureModule = directory({
+  components: directory({
+    "index.ts": file(),
+  }),
+});
+
+export const nextjsAppLayout = directory({
+  features: directory({
+    $domain: param({ case: "kebab" }, featureModule),
+  }),
+});
+"#,
+        )
+        .unwrap();
+
+        // Root config importing the exported layout
+        fs::write(
+            root.join("repo-lint.config.ts"),
+            r#"
+import { defineConfig } from "repo-lint";
+import { nextjsAppLayout } from "./packages/config/repo-lint/nextjs";
+
+export default defineConfig({
+  layout: nextjsAppLayout,
+});
+"#,
+        )
+        .unwrap();
+
+        let parser = ConfigParser::new();
+        let ir = parser
+            .parse_file(&root.join("repo-lint.config.ts"))
+            .unwrap();
+        let layout = ir.layout.unwrap();
+
+        // Assert: features/$domain(param)/components exists
+        let LayoutNode::Dir { children, .. } = layout else {
+            panic!("expected root dir");
+        };
+        let LayoutNode::Dir { children, .. } = children.get("features").unwrap() else {
+            panic!("expected features dir");
+        };
+        let LayoutNode::Param { child, .. } = children.get("$domain").unwrap() else {
+            panic!("expected $domain param");
+        };
+        let LayoutNode::Dir { children, .. } = child.as_ref() else {
+            panic!("expected param child dir (featureModule)");
+        };
+        assert!(
+            children.contains_key("components"),
+            "featureModule const was not resolved - components dir missing"
+        );
+    }
+
+    #[test]
+    fn test_imported_layout_with_deeply_nested_local_consts() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        let config_dir = root.join("packages/config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        // Multiple local consts referencing each other
+        fs::write(
+            config_dir.join("layouts.ts"),
+            r#"
+import { directory, param, file, many } from "repo-lint";
+
+// These are all LOCAL consts (not exported)
+const fileNode = file("*.ts");
+
+const componentsDir = directory({
+  "index.ts": file(),
+  $component: many(fileNode),
+});
+
+const featureModule = directory({
+  components: componentsDir,
+  hooks: directory({
+    "index.ts": file(),
+  }),
+});
+
+// Only this is exported
+export const appLayout = directory({
+  features: directory({
+    $domain: param({ case: "kebab" }, featureModule),
+  }),
+});
+"#,
+        )
+        .unwrap();
+
+        fs::write(
+            root.join("repo-lint.config.ts"),
+            r#"
+import { defineConfig } from "repo-lint";
+import { appLayout } from "./packages/config/layouts";
+
+export default defineConfig({
+  layout: appLayout,
+});
+"#,
+        )
+        .unwrap();
+
+        let parser = ConfigParser::new();
+        let ir = parser
+            .parse_file(&root.join("repo-lint.config.ts"))
+            .unwrap();
+        let layout = ir.layout.unwrap();
+
+        // Verify the deeply nested structure was resolved
+        let LayoutNode::Dir { children, .. } = layout else {
+            panic!("expected root dir");
+        };
+        let LayoutNode::Dir { children, .. } = children.get("features").unwrap() else {
+            panic!("expected features dir");
+        };
+        let LayoutNode::Param { child, .. } = children.get("$domain").unwrap() else {
+            panic!("expected $domain param");
+        };
+        let LayoutNode::Dir { children, .. } = child.as_ref() else {
+            panic!("expected featureModule dir");
+        };
+
+        // Check componentsDir was resolved
+        let LayoutNode::Dir {
+            children: comp_children,
+            ..
+        } = children.get("components").unwrap()
+        else {
+            panic!("expected components dir (componentsDir const)");
+        };
+        assert!(
+            comp_children.contains_key("index.ts"),
+            "components should have index.ts"
+        );
+        assert!(
+            comp_children.contains_key("$component"),
+            "components should have $component (fileNode const)"
+        );
+
+        // Check hooks was resolved
+        assert!(
+            children.contains_key("hooks"),
+            "featureModule should have hooks"
+        );
+    }
+
+    #[test]
+    fn test_imported_layout_from_reexporting_module() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        let config_dir = root.join("packages/config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        // Original module with local const
+        fs::write(
+            config_dir.join("base.ts"),
+            r#"
+import { directory, file, param } from "repo-lint";
+
+const routeContent = directory({
+  "page.tsx": file(),
+  "layout.tsx": file(),
+});
+
+export const baseLayout = directory({
+  app: directory({
+    $route: param({ case: "kebab" }, routeContent),
+  }),
+});
+"#,
+        )
+        .unwrap();
+
+        // Re-exporting module
+        fs::write(
+            config_dir.join("index.ts"),
+            r#"
+export { baseLayout } from "./base";
+"#,
+        )
+        .unwrap();
+
+        fs::write(
+            root.join("repo-lint.config.ts"),
+            r#"
+import { defineConfig } from "repo-lint";
+import { baseLayout } from "./packages/config";
+
+export default defineConfig({
+  layout: baseLayout,
+});
+"#,
+        )
+        .unwrap();
+
+        let parser = ConfigParser::new();
+        let ir = parser
+            .parse_file(&root.join("repo-lint.config.ts"))
+            .unwrap();
+        let layout = ir.layout.unwrap();
+
+        // Verify structure
+        let LayoutNode::Dir { children, .. } = layout else {
+            panic!("expected root dir");
+        };
+        let LayoutNode::Dir { children, .. } = children.get("app").unwrap() else {
+            panic!("expected app dir");
+        };
+        let LayoutNode::Param { child, .. } = children.get("$route").unwrap() else {
+            panic!("expected $route param");
+        };
+        let LayoutNode::Dir { children, .. } = child.as_ref() else {
+            panic!("expected routeContent dir");
+        };
+        assert!(
+            children.contains_key("page.tsx"),
+            "routeContent const should be resolved"
+        );
+        assert!(
+            children.contains_key("layout.tsx"),
+            "routeContent const should be resolved"
+        );
     }
 }
