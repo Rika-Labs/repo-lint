@@ -11,6 +11,8 @@ export interface WhenRequirement {
 }
 
 export interface DefineConfigOptions {
+  /** Extend another config file (supports relative paths and @/ root alias) */
+  extends?: string;
   mode?: "strict" | "warn";
   layout: LayoutNode;
   rules?: RulesConfig;

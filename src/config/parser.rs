@@ -37,14 +37,20 @@ use std::cell::RefCell;
 
 pub struct ConfigParser {
     source_map: Lrc<SourceMap>,
-    layout_cache: RefCell<HashMap<PathBuf, HashMap<String, LayoutNode>>>,
+    module_exports_cache: RefCell<HashMap<PathBuf, ModuleExports>>,
+}
+
+#[derive(Clone, Default)]
+struct ModuleExports {
+    layouts: HashMap<String, LayoutNode>,
+    when: HashMap<String, HashMap<String, WhenRequirement>>,
 }
 
 impl ConfigParser {
     pub fn new() -> Self {
         Self {
             source_map: Lrc::new(SourceMap::default()),
-            layout_cache: RefCell::new(HashMap::new()),
+            module_exports_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -176,6 +182,7 @@ impl ConfigParser {
     fn extract_config(&self, module: &Module, current_path: &Path) -> Result<ConfigIR, ParseError> {
         let mut variables: HashMap<String, &Expr> = HashMap::new();
         let mut imported_layouts: HashMap<String, LayoutNode> = HashMap::new();
+        let mut imported_when: HashMap<String, HashMap<String, WhenRequirement>> = HashMap::new();
 
         for item in &module.body {
             match item {
@@ -215,8 +222,11 @@ impl ConfigParser {
                                         })
                                         .unwrap_or_else(|| local.clone());
 
-                                    if let Some(layout) = exports.get(&imported) {
-                                        imported_layouts.insert(local, layout.clone());
+                                    if let Some(layout) = exports.layouts.get(&imported) {
+                                        imported_layouts.insert(local.clone(), layout.clone());
+                                    }
+                                    if let Some(when) = exports.when.get(&imported) {
+                                        imported_when.insert(local, when.clone());
                                     }
                                 }
                             }
@@ -229,7 +239,12 @@ impl ConfigParser {
 
         for item in &module.body {
             if let ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(export)) = item {
-                return self.eval_define_config(&export.expr, &variables, &imported_layouts);
+                return self.eval_define_config(
+                    &export.expr,
+                    &variables,
+                    &imported_layouts,
+                    &imported_when,
+                );
             }
         }
         Err(ParseError::MissingField(
@@ -237,8 +252,8 @@ impl ConfigParser {
         ))
     }
 
-    fn parse_module_exports(&self, path: &Path) -> Result<HashMap<String, LayoutNode>, ParseError> {
-        if let Some(cached) = self.layout_cache.borrow().get(path) {
+    fn parse_module_exports(&self, path: &Path) -> Result<ModuleExports, ParseError> {
+        if let Some(cached) = self.module_exports_cache.borrow().get(path) {
             return Ok(cached.clone());
         }
 
@@ -268,11 +283,12 @@ impl ConfigParser {
             message: e.kind().msg().to_string(),
         })?;
 
-        let mut exports = HashMap::new();
-        let mut variables = HashMap::new();
-        let imported_layouts = HashMap::new();
+        let mut exports = ModuleExports::default();
+        let mut variables: HashMap<String, &Expr> = HashMap::new();
+        let mut imported_layouts: HashMap<String, LayoutNode> = HashMap::new();
+        let mut imported_when: HashMap<String, HashMap<String, WhenRequirement>> = HashMap::new();
 
-        // Basic extraction similar to extract_config but looking for exports
+        // First pass: gather local variables and imported exports so exported values can reference them.
         for item in &module.body {
             match item {
                 ModuleItem::Stmt(Stmt::Decl(Decl::Var(var_decl))) => {
@@ -289,12 +305,33 @@ impl ConfigParser {
                         for decl in &var_decl.decls {
                             if let Pat::Ident(ident) = &decl.name {
                                 if let Some(init) = &decl.init {
-                                    let name = ident.sym.to_string();
-                                    variables.insert(name.clone(), init.as_ref());
-                                    if let Ok(layout) =
-                                        self.eval_layout_node(init, &variables, &imported_layouts)
-                                    {
-                                        exports.insert(name, layout);
+                                    variables.insert(ident.sym.to_string(), init.as_ref());
+                                }
+                            }
+                        }
+                    }
+                }
+                ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => {
+                    let specifier = import.src.value.as_ref();
+                    if let Some(import_path) = self.resolve_import(path, specifier) {
+                        if let Ok(dep_exports) = self.parse_module_exports(&import_path) {
+                            for spec in &import.specifiers {
+                                if let ImportSpecifier::Named(named) = spec {
+                                    let local = named.local.sym.to_string();
+                                    let imported = named
+                                        .imported
+                                        .as_ref()
+                                        .map(|i| match i {
+                                            ModuleExportName::Ident(id) => id.sym.to_string(),
+                                            ModuleExportName::Str(s) => s.value.to_string(),
+                                        })
+                                        .unwrap_or_else(|| local.clone());
+
+                                    if let Some(layout) = dep_exports.layouts.get(&imported) {
+                                        imported_layouts.insert(local.clone(), layout.clone());
+                                    }
+                                    if let Some(when) = dep_exports.when.get(&imported) {
+                                        imported_when.insert(local, when.clone());
                                     }
                                 }
                             }
@@ -305,7 +342,32 @@ impl ConfigParser {
             }
         }
 
-        self.layout_cache
+        // Second pass: evaluate exports.
+        for item in &module.body {
+            if let ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) = item {
+                if let Decl::Var(var_decl) = &export.decl {
+                    for decl in &var_decl.decls {
+                        if let Pat::Ident(ident) = &decl.name {
+                            if let Some(init) = &decl.init {
+                                let name = ident.sym.to_string();
+                                if let Ok(layout) =
+                                    self.eval_layout_node(init, &variables, &imported_layouts)
+                                {
+                                    exports.layouts.insert(name.clone(), layout);
+                                    continue;
+                                }
+
+                                if let Ok(when) = self.eval_when(init, &variables, &imported_when) {
+                                    exports.when.insert(name, when);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        self.module_exports_cache
             .borrow_mut()
             .insert(path.to_path_buf(), exports.clone());
         Ok(exports)
@@ -316,6 +378,7 @@ impl ConfigParser {
         expr: &Expr,
         variables: &HashMap<String, &Expr>,
         imported_layouts: &HashMap<String, LayoutNode>,
+        imported_when: &HashMap<String, HashMap<String, WhenRequirement>>,
     ) -> Result<ConfigIR, ParseError> {
         if let Expr::Call(call) = expr {
             if let Callee::Expr(callee_expr) = &call.callee {
@@ -336,7 +399,12 @@ impl ConfigParser {
                                     }
                                 }
                             }
-                            return self.eval_config_object(&arg.expr, variables, imported_layouts);
+                            return self.eval_config_object(
+                                &arg.expr,
+                                variables,
+                                imported_layouts,
+                                imported_when,
+                            );
                         }
                     } else if fn_name == "nextjsPreset" {
                         return self.eval_nextjs_preset(call, variables, imported_layouts);
@@ -446,6 +514,7 @@ impl ConfigParser {
         expr: &Expr,
         variables: &HashMap<String, &Expr>,
         imported_layouts: &HashMap<String, LayoutNode>,
+        imported_when: &HashMap<String, HashMap<String, WhenRequirement>>,
     ) -> Result<ConfigIR, ParseError> {
         let obj = self.expect_object(expr)?;
 
@@ -483,7 +552,7 @@ impl ConfigParser {
                         "workspaces" => workspaces = self.eval_string_array(&kv.value)?,
                         "dependencies" => dependencies = self.eval_dependencies(&kv.value)?,
                         "mirror" => mirror = self.eval_mirror(&kv.value)?,
-                        "when" => when = self.eval_when(&kv.value)?,
+                        "when" => when = self.eval_when(&kv.value, variables, imported_when)?,
                         "extends" => extends = Some(self.expect_string(&kv.value)?),
                         _ => {}
                     }
@@ -1032,7 +1101,22 @@ impl ConfigParser {
         Ok(mirrors)
     }
 
-    fn eval_when(&self, expr: &Expr) -> Result<HashMap<String, WhenRequirement>, ParseError> {
+    fn eval_when(
+        &self,
+        expr: &Expr,
+        variables: &HashMap<String, &Expr>,
+        imported_when: &HashMap<String, HashMap<String, WhenRequirement>>,
+    ) -> Result<HashMap<String, WhenRequirement>, ParseError> {
+        if let Expr::Ident(ident) = expr {
+            let name = ident.sym.as_ref();
+            if let Some(w) = imported_when.get(name) {
+                return Ok(w.clone());
+            }
+            if let Some(var_expr) = variables.get(name) {
+                return self.eval_when(var_expr, variables, imported_when);
+            }
+        }
+
         let obj = self.expect_object(expr)?;
         let mut when = HashMap::new();
 
@@ -1174,6 +1258,8 @@ impl Default for ConfigParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn test_parse_simple_config() {
@@ -1533,5 +1619,124 @@ export default defineConfig({
             vec!["**/node_modules/**", "**/.turbo/**"]
         );
         assert_eq!(ir.rules.forbid_paths, vec!["**/utils/**"]);
+    }
+
+    #[test]
+    fn test_imported_layout_can_reference_imported_nested_directory_helpers() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        let config_dir = root.join("packages/config/repo-lint");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        // A nested module that exports a layout.
+        fs::write(
+            config_dir.join("feature.ts"),
+            r#"
+import { directory, file } from "repo-lint";
+
+export const featureModule = directory({
+  asset: directory({
+    components: directory({
+      "index.ts": file(),
+    }),
+  }),
+});
+"#,
+        )
+        .unwrap();
+
+        // The module we import from: it imports featureModule and uses it inside param().
+        fs::write(
+            config_dir.join("nextjs.ts"),
+            r#"
+import { directory, param } from "repo-lint";
+import { featureModule } from "./feature";
+
+export const nextjsAppLayout = directory({
+  features: directory({
+    $domain: param({ case: "kebab" }, featureModule),
+  }),
+});
+"#,
+        )
+        .unwrap();
+
+        // Root config importing the exported layout.
+        fs::write(
+            root.join("repo-lint.config.ts"),
+            r#"
+import { defineConfig } from "repo-lint";
+import { nextjsAppLayout } from "./packages/config/repo-lint/nextjs";
+
+export default defineConfig({
+  layout: nextjsAppLayout,
+});
+"#,
+        )
+        .unwrap();
+
+        let parser = ConfigParser::new();
+        let ir = parser
+            .parse_file(&root.join("repo-lint.config.ts"))
+            .unwrap();
+        let layout = ir.layout.unwrap();
+
+        // Assert: features/$domain(param)/asset/components exists (i.e., nested directory helpers were evaluated).
+        let LayoutNode::Dir { children, .. } = layout else {
+            panic!("expected root dir");
+        };
+        let LayoutNode::Dir { children, .. } = children.get("features").unwrap() else {
+            panic!("expected features dir");
+        };
+        let LayoutNode::Param { child, .. } = children.get("$domain").unwrap() else {
+            panic!("expected $domain param");
+        };
+        let LayoutNode::Dir { children, .. } = child.as_ref() else {
+            panic!("expected param child dir");
+        };
+        let LayoutNode::Dir { children, .. } = children.get("asset").unwrap() else {
+            panic!("expected asset dir");
+        };
+        assert!(children.contains_key("components"));
+    }
+
+    #[test]
+    fn test_when_can_be_imported_from_module() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        fs::write(
+            root.join("conds.ts"),
+            r#"
+export const elysiaWhenConditions = {
+  "src/index.ts": { requires: ["src/app.ts"] },
+};
+"#,
+        )
+        .unwrap();
+
+        fs::write(
+            root.join("repo-lint.config.ts"),
+            r#"
+import { defineConfig, dir } from "repo-lint";
+import { elysiaWhenConditions } from "./conds";
+
+export default defineConfig({
+  layout: dir({}),
+  when: elysiaWhenConditions,
+});
+"#,
+        )
+        .unwrap();
+
+        let parser = ConfigParser::new();
+        let ir = parser
+            .parse_file(&root.join("repo-lint.config.ts"))
+            .unwrap();
+        assert_eq!(
+            ir.when.get("src/index.ts").unwrap().requires.as_slice(),
+            &["src/app.ts"]
+        );
     }
 }
