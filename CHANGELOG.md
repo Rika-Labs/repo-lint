@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.4] - 2024-12-17
+
+### Fixed
+
+- **Quality Gate Fixes**: Resolved clippy warnings and formatting issues in the config parser.
+- **Publish Fix**: Bumped version to retry failed npm release.
+
 ## [0.3.3] - 2024-12-17
 
 ### Added
