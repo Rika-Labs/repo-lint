@@ -2308,4 +2308,162 @@ export default defineConfig({
             "routeContent const should be resolved"
         );
     }
+
+    #[test]
+    fn test_imported_layout_with_brace_expansion_in_file() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        let config_dir = root.join("packages/config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        fs::write(
+            config_dir.join("nextjs.ts"),
+            r#"
+import { directory, param, file, many, optional } from "repo-lint";
+
+const featureModule = directory({
+  components: optional(directory({
+    $f: many(file('*.{ts,tsx}')),
+  })),
+});
+
+export const layout = directory({
+  features: directory({
+    $domain: param({ case: 'kebab' }, featureModule),
+  }),
+});
+"#,
+        )
+        .unwrap();
+
+        fs::write(
+            root.join("repo-lint.config.ts"),
+            r#"
+import { defineConfig } from "repo-lint";
+import { layout } from "./packages/config/nextjs";
+
+export default defineConfig({ layout });
+"#,
+        )
+        .unwrap();
+
+        let parser = ConfigParser::new();
+        let ir = parser
+            .parse_file(&root.join("repo-lint.config.ts"))
+            .unwrap();
+        let layout_node = ir.layout.unwrap();
+
+        // Navigate to features/$domain/components/$f
+        let LayoutNode::Dir { children, .. } = layout_node else {
+            panic!("expected root dir");
+        };
+        let LayoutNode::Dir { children, .. } = children.get("features").unwrap() else {
+            panic!("expected features dir");
+        };
+        let LayoutNode::Param { child, .. } = children.get("$domain").unwrap() else {
+            panic!("expected $domain param");
+        };
+        let LayoutNode::Dir { children, .. } = child.as_ref() else {
+            panic!("expected featureModule dir");
+        };
+        let LayoutNode::Dir {
+            children, optional, ..
+        } = children.get("components").unwrap()
+        else {
+            panic!("expected components dir");
+        };
+        assert!(*optional, "components should be optional");
+
+        let LayoutNode::Many { child, .. } = children.get("$f").unwrap() else {
+            panic!("expected $f many");
+        };
+        let LayoutNode::File { pattern, .. } = child.as_ref() else {
+            panic!("expected file node");
+        };
+        assert_eq!(
+            pattern.as_deref(),
+            Some("*.{ts,tsx}"),
+            "file pattern should be preserved"
+        );
+    }
+
+    #[test]
+    fn test_imported_layout_with_file_object_syntax() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        let config_dir = root.join("packages/config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        fs::write(
+            config_dir.join("nextjs.ts"),
+            r#"
+import { directory, param, file, many } from "repo-lint";
+
+const featureModule = directory({
+  components: directory({
+    $f: many(file({ pattern: '*.ts', case: 'kebab' })),
+  }),
+});
+
+export const layout = directory({
+  features: directory({
+    $domain: param({ case: 'kebab' }, featureModule),
+  }),
+});
+"#,
+        )
+        .unwrap();
+
+        fs::write(
+            root.join("repo-lint.config.ts"),
+            r#"
+import { defineConfig } from "repo-lint";
+import { layout } from "./packages/config/nextjs";
+
+export default defineConfig({ layout });
+"#,
+        )
+        .unwrap();
+
+        let parser = ConfigParser::new();
+        let ir = parser
+            .parse_file(&root.join("repo-lint.config.ts"))
+            .unwrap();
+        let layout_node = ir.layout.unwrap();
+
+        // Navigate to features/$domain/components/$f
+        let LayoutNode::Dir { children, .. } = layout_node else {
+            panic!("expected root dir");
+        };
+        let LayoutNode::Dir { children, .. } = children.get("features").unwrap() else {
+            panic!("expected features dir");
+        };
+        let LayoutNode::Param { child, .. } = children.get("$domain").unwrap() else {
+            panic!("expected $domain param");
+        };
+        let LayoutNode::Dir { children, .. } = child.as_ref() else {
+            panic!("expected featureModule dir");
+        };
+        let LayoutNode::Dir { children, .. } = children.get("components").unwrap() else {
+            panic!("expected components dir");
+        };
+
+        let LayoutNode::Many { child, .. } = children.get("$f").unwrap() else {
+            panic!("expected $f many");
+        };
+        let LayoutNode::File { pattern, case, .. } = child.as_ref() else {
+            panic!("expected file node");
+        };
+        assert_eq!(
+            pattern.as_deref(),
+            Some("*.ts"),
+            "file pattern should be preserved"
+        );
+        assert!(
+            matches!(case, Some(CaseStyle::Kebab)),
+            "file case should be kebab"
+        );
+    }
 }

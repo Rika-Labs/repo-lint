@@ -577,15 +577,8 @@ impl LayoutMatcher {
     }
 
     fn matches_pattern(name: &str, pattern: &str) -> bool {
-        if pattern.contains('*') {
-            let parts: Vec<&str> = pattern.split('*').collect();
-            if parts.len() == 2 {
-                let prefix = parts[0];
-                let suffix = parts[1];
-                return name.starts_with(prefix) && name.ends_with(suffix);
-            }
-        }
-        name == pattern
+        // Use fast_glob for proper glob matching including brace expansion
+        fast_glob::glob_match(pattern, name)
     }
 
     pub fn get_expected_children(&self, path: &Path) -> Vec<ExpectedChild> {
@@ -1035,5 +1028,54 @@ mod tests {
             result,
             MatchResult::Allowed | MatchResult::AllowedParam { .. }
         ));
+    }
+
+    #[test]
+    fn test_brace_expansion_in_file_pattern() {
+        // Test that brace expansion like *.{ts,tsx} works correctly
+        let mut children = HashMap::new();
+        children.insert(
+            "$file".to_string(),
+            LayoutNode::Many {
+                case: None,
+                child: Box::new(LayoutNode::File {
+                    pattern: Some("*.{ts,tsx}".to_string()),
+                    optional: false,
+                    required: false,
+                    case: None,
+                }),
+                max: None,
+            },
+        );
+
+        let layout = LayoutNode::dir(children);
+        let matcher = LayoutMatcher::new(Some(layout));
+
+        // Should match .ts files
+        let result = matcher.match_path(Path::new("component.ts"));
+        assert!(
+            matches!(result, MatchResult::AllowedMany { .. }),
+            "*.{{ts,tsx}} should match .ts files, got {:?}",
+            result
+        );
+
+        // Should match .tsx files
+        let result = matcher.match_path(Path::new("component.tsx"));
+        assert!(
+            matches!(result, MatchResult::AllowedMany { .. }),
+            "*.{{ts,tsx}} should match .tsx files, got {:?}",
+            result
+        );
+
+        // Should NOT match .js files
+        let result = matcher.match_path(Path::new("component.js"));
+        assert!(
+            !matches!(
+                result,
+                MatchResult::Allowed | MatchResult::AllowedMany { .. }
+            ),
+            "*.{{ts,tsx}} should NOT match .js files, got {:?}",
+            result
+        );
     }
 }
