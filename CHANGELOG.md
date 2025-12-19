@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.10] - 2024-12-19
+
+### Fixed
+
+- **Bun Compatibility**: Added lazy install fallback for bun users. Bun doesn't run postinstall scripts by default, so the CLI wrapper now automatically downloads the binary on first run if missing.
+- **CLI Wrapper**: Renamed `bin/repo-lint` to `bin/repo-lint.js` for better cross-platform compatibility.
+- **Skip Install Option**: Added `REPO_LINT_SKIP_INSTALL` environment variable to opt out of automatic binary download.
+
 ## [0.3.9] - 2024-12-17
 
 ### Fixed
