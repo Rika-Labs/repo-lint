@@ -41,6 +41,8 @@ bun add @rikalabs/repo-lint
 
 This installs both the TypeScript types (for config autocomplete) and the CLI binary.
 
+> **Note for bun users:** Bun doesn't run postinstall scripts by default for security. The binary will be automatically downloaded on first run. If you prefer to install during `bun add`, use `bun add --trust @rikalabs/repo-lint` or add `"trustedDependencies": ["@rikalabs/repo-lint"]` to your package.json.
+
 ## Quick Start
 
 1. Create a `repo-lint.config.ts` file:

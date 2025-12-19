@@ -55,7 +55,7 @@
     }
   },
   "bin": {
-    "repo-lint": "./bin/repo-lint"
+    "repo-lint": "./bin/repo-lint.js"
   },
   "files": [
     "index.js",

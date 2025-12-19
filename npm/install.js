@@ -89,6 +89,11 @@ async function extractZip(buffer, destDir) {
 }
 
 async function install() {
+  if (process.env.REPO_LINT_SKIP_INSTALL || process.env.SKIP_REPO_LINT_INSTALL) {
+    console.log("Skipping repo-lint binary installation (skipped by env var)");
+    process.exit(0);
+  }
+
   try {
     const { binaryName, ext, platform } = getPlatformInfo();
     const version = `v${PACKAGE_VERSION}`;
