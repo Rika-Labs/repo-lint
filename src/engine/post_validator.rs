@@ -276,7 +276,7 @@ impl<'a> PostValidator<'a> {
                 if pattern_part.contains('*') {
                     // Extract the value matched by this wildcard
                     let prefix = pattern_part.split('*').next().unwrap_or("");
-                    let suffix = pattern_part.split('*').last().unwrap_or("");
+                    let suffix = pattern_part.split('*').next_back().unwrap_or("");
                     let actual = actual_parts[i];
 
                     let value = actual
@@ -294,7 +294,7 @@ impl<'a> PostValidator<'a> {
             if target_part.contains('*') {
                 if wildcard_idx < wildcard_values.len() {
                     let prefix = target_part.split('*').next().unwrap_or("");
-                    let suffix = target_part.split('*').last().unwrap_or("");
+                    let suffix = target_part.split('*').next_back().unwrap_or("");
                     let mut value = wildcard_values[wildcard_idx].clone();
 
                     // Apply extension transformation if this is the last part (filename)
