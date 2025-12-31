@@ -6,9 +6,11 @@ use crate::config::RulesConfig;
 #[derive(Debug, Clone)]
 pub struct CompiledRules {
     forbid_paths_patterns: Vec<CompactString>,
+    forbid_paths_negated: Vec<CompactString>,
     forbid_names: Vec<CompactString>,
     forbid_names_lower: Vec<CompactString>,
     ignore_paths_patterns: Vec<CompactString>,
+    ignore_paths_negated: Vec<CompactString>,
     has_path_rules: bool,
     has_name_rules: bool,
     has_ignore_rules: bool,
@@ -16,11 +18,17 @@ pub struct CompiledRules {
 
 impl CompiledRules {
     pub fn compile(config: &RulesConfig) -> Result<Self, globset::Error> {
-        let forbid_paths_patterns: Vec<CompactString> = config
-            .forbid_paths
-            .iter()
-            .map(|s| CompactString::new(s))
-            .collect();
+        let mut forbid_paths_patterns = Vec::new();
+        let mut forbid_paths_negated = Vec::new();
+        for pattern in &config.forbid_paths {
+            if let Some(stripped) = pattern.strip_prefix('!') {
+                if !stripped.is_empty() {
+                    forbid_paths_negated.push(CompactString::new(stripped));
+                }
+            } else {
+                forbid_paths_patterns.push(CompactString::new(pattern));
+            }
+        }
 
         let forbid_names: Vec<CompactString> = config
             .forbid_names
@@ -34,20 +42,28 @@ impl CompiledRules {
             .map(|n| CompactString::new(n.to_lowercase()))
             .collect();
 
-        let ignore_paths_patterns: Vec<CompactString> = config
-            .ignore_paths
-            .iter()
-            .map(|s| CompactString::new(s))
-            .collect();
+        let mut ignore_paths_patterns = Vec::new();
+        let mut ignore_paths_negated = Vec::new();
+        for pattern in &config.ignore_paths {
+            if let Some(stripped) = pattern.strip_prefix('!') {
+                if !stripped.is_empty() {
+                    ignore_paths_negated.push(CompactString::new(stripped));
+                }
+            } else {
+                ignore_paths_patterns.push(CompactString::new(pattern));
+            }
+        }
 
         Ok(Self {
-            has_path_rules: !config.forbid_paths.is_empty(),
+            has_path_rules: !forbid_paths_patterns.is_empty(),
             has_name_rules: !config.forbid_names.is_empty(),
-            has_ignore_rules: !config.ignore_paths.is_empty(),
+            has_ignore_rules: !ignore_paths_patterns.is_empty(),
             forbid_paths_patterns,
+            forbid_paths_negated,
             forbid_names,
             forbid_names_lower,
             ignore_paths_patterns,
+            ignore_paths_negated,
         })
     }
 
@@ -57,12 +73,22 @@ impl CompiledRules {
             return false;
         }
         let path_str = path.to_string_lossy();
+        let mut ignored = false;
         for pattern in &self.ignore_paths_patterns {
             if fast_glob::glob_match(pattern.as_str(), path_str.as_ref()) {
-                return true;
+                ignored = true;
+                break;
             }
         }
-        false
+        if !ignored {
+            return false;
+        }
+        for pattern in &self.ignore_paths_negated {
+            if fast_glob::glob_match(pattern.as_str(), path_str.as_ref()) {
+                return false;
+            }
+        }
+        true
     }
 
     #[inline]
@@ -87,6 +113,16 @@ impl CompiledRules {
                 }
             }
             if !matching_patterns.is_empty() {
+                let mut negated = false;
+                for pattern in &self.forbid_paths_negated {
+                    if fast_glob::glob_match(pattern.as_str(), path_str.as_ref()) {
+                        negated = true;
+                        break;
+                    }
+                }
+                if negated {
+                    return violations;
+                }
                 violations.push(RuleViolation::ForbiddenPath {
                     path: path.to_path_buf(),
                     matched_patterns: matching_patterns,
@@ -281,5 +317,36 @@ mod tests {
         assert!(rules.is_ignored(Path::new(".turbo/cache/file.txt")));
         assert!(!rules.is_ignored(Path::new("src/index.ts")));
         assert!(!rules.is_ignored(Path::new("lib/utils.ts")));
+    }
+
+    #[test]
+    fn test_forbid_paths_negation() {
+        let config = RulesConfig {
+            forbid_paths: vec!["**/*.mjs".to_string(), "!**/postcss.config.mjs".to_string()],
+            forbid_names: vec![],
+            ignore_paths: vec![],
+        };
+
+        let rules = CompiledRules::compile(&config).unwrap();
+
+        let violations = rules.check_path(Path::new("postcss.config.mjs"));
+        assert!(violations.is_empty());
+
+        let violations = rules.check_path(Path::new("scripts/build.mjs"));
+        assert_eq!(violations.len(), 1);
+    }
+
+    #[test]
+    fn test_ignore_paths_negation() {
+        let config = RulesConfig {
+            forbid_paths: vec![],
+            forbid_names: vec![],
+            ignore_paths: vec!["**/*.log".to_string(), "!**/keep.log".to_string()],
+        };
+
+        let rules = CompiledRules::compile(&config).unwrap();
+
+        assert!(rules.is_ignored(Path::new("logs/app.log")));
+        assert!(!rules.is_ignored(Path::new("logs/keep.log")));
     }
 }

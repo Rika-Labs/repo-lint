@@ -1,3 +1,4 @@
+use ignore::overrides::OverrideBuilder;
 use ignore::WalkBuilder;
 use std::path::{Path, PathBuf};
 
@@ -40,6 +41,10 @@ impl ConfigDiscovery {
             .parents(true)
             .ignore(true);
 
+        if let Some(overrides) = self.build_overrides() {
+            builder.overrides(overrides);
+        }
+
         for entry in builder.build().filter_map(|e| e.ok()) {
             let path = entry.path();
             if path
@@ -76,10 +81,17 @@ impl ConfigDiscovery {
             configs.push(root_config);
         }
 
+        let overrides = self.build_overrides();
         for pattern in patterns {
             let glob_pattern = format!("{}/{}", pattern, CONFIG_FILENAME);
             if let Ok(entries) = glob::glob(&self.root.join(&glob_pattern).to_string_lossy()) {
                 for entry in entries.filter_map(|e| e.ok()) {
+                    if let Some(ref matcher) = overrides {
+                        let is_dir = entry.is_dir();
+                        if matcher.matched(&entry, is_dir).is_ignore() {
+                            continue;
+                        }
+                    }
                     let workspace_root = entry.parent().unwrap_or(&entry).to_path_buf();
                     let relative_path = workspace_root
                         .strip_prefix(&self.root)
@@ -139,6 +151,43 @@ impl ConfigDiscovery {
                         .starts_with(&format!("{}/", workspace_filter))
             })
             .collect()
+    }
+
+    fn build_overrides(&self) -> Option<ignore::overrides::Override> {
+        let ignore_paths = self.read_ignore_paths();
+        if ignore_paths.is_empty() {
+            return None;
+        }
+
+        let mut builder = OverrideBuilder::new(&self.root);
+        for pattern in ignore_paths {
+            if pattern.contains("**") {
+                let _ = builder.add(&format!("!{}", pattern));
+                let trimmed = pattern.trim_end_matches("/**");
+                if trimmed != pattern {
+                    let _ = builder.add(&format!("!{}", trimmed));
+                }
+            } else if pattern.contains('/') || pattern.contains('*') {
+                let _ = builder.add(&format!("!{}", pattern));
+            } else {
+                let _ = builder.add(&format!("!{}", pattern));
+                let _ = builder.add(&format!("!{}/", pattern));
+                let _ = builder.add(&format!("!{}/**", pattern));
+            }
+        }
+
+        builder.build().ok()
+    }
+
+    fn read_ignore_paths(&self) -> Vec<String> {
+        let mut paths = Vec::new();
+        if let Ok(content) = std::fs::read_to_string(self.root.join(CONFIG_FILENAME)) {
+            let parser = crate::config::ConfigParser::new();
+            if let Ok(config) = parser.parse_string(&content, CONFIG_FILENAME) {
+                paths.extend(config.ignore);
+            }
+        }
+        paths
     }
 }
 
@@ -211,6 +260,30 @@ export default defineConfig({ layout: dir({ "index.ts": file() }) });
 
         assert_eq!(configs.len(), 1);
         assert_eq!(configs[0].relative_path, "");
+    }
+
+    #[test]
+    fn test_discover_ignores_config_ignore() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        fs::write(
+            root.join("repo-lint.config.ts"),
+            r#"import { defineConfig, dir, file } from "@rikalabs/repo-lint"; export default defineConfig({ ignore: ["ignored"], layout: dir({ "index.ts": file() }) });"#,
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("ignored/app")).unwrap();
+        create_config(&root.join("ignored/app"), minimal_config());
+        fs::create_dir_all(root.join("apps/web")).unwrap();
+        create_config(&root.join("apps/web"), minimal_config());
+
+        let discovery = ConfigDiscovery::new(root);
+        let configs = discovery.discover();
+
+        let paths: Vec<&str> = configs.iter().map(|c| c.relative_path.as_str()).collect();
+        assert!(paths.contains(&""));
+        assert!(paths.contains(&"apps/web"));
+        assert!(!paths.contains(&"ignored/app"));
     }
 
     #[test]

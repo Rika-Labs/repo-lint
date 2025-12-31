@@ -1,6 +1,6 @@
 [package]
 name = "repo-lint"
-version = "0.3.13"
+version = "0.3.14"
 edition = "2021"
 authors = ["Rika Labs"]
 description = "A high-performance filesystem layout linter with TypeScript DSL config"

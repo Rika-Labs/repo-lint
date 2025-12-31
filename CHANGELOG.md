@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.14] - 2025-12-31
+
+### Fixed
+
+- **Workspace Package Resolution**: Avoids scanning ignored directories and caches results to prevent repeated filesystem walks.
+- **Config Discovery**: Respects root `ignore` entries when discovering configs.
+- **String Patterns**: Supports computed string patterns (template literals, concatenation, and `join`) in `file()` patterns.
+- **Rule Negation**: Honors negated patterns in `forbidPaths` and `ignorePaths`.
+
 ## [0.3.13] - 2025-12-31
 
 ### Fixed

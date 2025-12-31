@@ -162,6 +162,8 @@ impl ConfigParser {
             return cached;
         }
 
+        let ignore_dirs = self.collect_ignore_dirs(&root);
+
         // Search common workspace directories for package.json with matching name
         let search_dirs = ["packages", "apps", "libs"];
         for search_dir in &search_dirs {
@@ -169,7 +171,9 @@ impl ConfigParser {
             if !base.exists() {
                 continue;
             }
-            if let Some(pkg_path) = self.find_package_in_dir(&base, &package_name, subpath) {
+            if let Some(pkg_path) =
+                self.find_package_in_dir(&base, &package_name, subpath, &ignore_dirs)
+            {
                 self.workspace_package_cache
                     .borrow_mut()
                     .insert(cache_key, Some(pkg_path.clone()));
@@ -188,6 +192,7 @@ impl ConfigParser {
         dir: &Path,
         package_name: &str,
         subpath: &str,
+        ignore_dirs: &std::collections::HashSet<String>,
     ) -> Option<PathBuf> {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return None;
@@ -204,27 +209,11 @@ impl ConfigParser {
                 continue;
             }
             let path = entry.path();
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(
-                    name,
-                    "node_modules"
-                        | ".git"
-                        | ".hg"
-                        | ".svn"
-                        | ".next"
-                        | ".turbo"
-                        | ".submodules"
-                        | "dist"
-                        | "build"
-                        | "out"
-                        | "target"
-                        | "coverage"
-                        | "test-results"
-                        | ".cache"
-                        | ".vercel"
-                ) {
-                    continue;
-                }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if ignore_dirs.contains(name) {
+                continue;
             }
 
             // Check this directory
@@ -245,12 +234,62 @@ impl ConfigParser {
             }
 
             // Recurse into subdirectories (for nested workspaces like packages/core/*)
-            if let Some(found) = self.find_package_in_dir(&path, package_name, subpath) {
+            if let Some(found) = self.find_package_in_dir(&path, package_name, subpath, ignore_dirs)
+            {
                 return Some(found);
             }
         }
 
         None
+    }
+
+    fn collect_ignore_dirs(&self, root: &Path) -> std::collections::HashSet<String> {
+        let mut ignores = std::collections::HashSet::new();
+        for name in [
+            "node_modules",
+            ".git",
+            ".hg",
+            ".svn",
+            ".next",
+            ".turbo",
+            ".submodules",
+            "dist",
+            "build",
+            "out",
+            "target",
+            "coverage",
+            "test-results",
+            ".cache",
+            ".vercel",
+        ] {
+            ignores.insert(name.to_string());
+        }
+
+        if let Ok(content) = std::fs::read_to_string(root.join("repo-lint.config.ts")) {
+            if let Some(start) = content.find("ignore") {
+                let after = &content[start..];
+                if let Some(bracket_start) = after.find('[') {
+                    let slice = &after[bracket_start + 1..];
+                    if let Some(bracket_end) = slice.find(']') {
+                        let list = &slice[..bracket_end];
+                        for part in list.split(',') {
+                            let item = part.trim();
+                            let item = item.trim_matches('"').trim_matches('\'');
+                            let trimmed =
+                                item.trim().trim_start_matches("./").trim_end_matches('/');
+                            if !trimmed.is_empty()
+                                && !trimmed.contains('*')
+                                && !trimmed.contains('/')
+                            {
+                                ignores.insert(trimmed.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        ignores
     }
 
     fn extract_package_name(&self, content: &str) -> Option<String> {
@@ -574,7 +613,7 @@ impl ConfigParser {
                                     }
 
                                     // Try to evaluate as string array (for ignore, forbidPaths, etc.)
-                                    if let Ok(arr) = self.eval_string_array(init) {
+                                    if let Ok(arr) = self.eval_string_array(init, &variables) {
                                         exports.string_arrays.insert(name.clone(), arr);
                                         continue;
                                     }
@@ -660,7 +699,9 @@ impl ConfigParser {
                                         self.eval_when(var_expr, &variables, &imported_when)
                                     {
                                         exports.when.insert(exported_name.clone(), when);
-                                    } else if let Ok(arr) = self.eval_string_array(var_expr) {
+                                    } else if let Ok(arr) =
+                                        self.eval_string_array(var_expr, &variables)
+                                    {
                                         exports.string_arrays.insert(exported_name.clone(), arr);
                                     } else if let Ok(rules) = self.eval_rules(var_expr, &variables)
                                     {
@@ -970,14 +1011,14 @@ impl ConfigParser {
                                 if let Some(arr) = imported_string_arrays.get(&key) {
                                     ignore = arr.clone();
                                 } else if let Some(var_expr) = variables.get(&key) {
-                                    ignore = self.eval_string_array(var_expr)?;
+                                    ignore = self.eval_string_array(var_expr, variables)?;
                                 }
                             }
                             "workspaces" => {
                                 if let Some(arr) = imported_string_arrays.get(&key) {
                                     workspaces = arr.clone();
                                 } else if let Some(var_expr) = variables.get(&key) {
-                                    workspaces = self.eval_string_array(var_expr)?;
+                                    workspaces = self.eval_string_array(var_expr, variables)?;
                                 }
                             }
                             _ => {}
@@ -1043,7 +1084,7 @@ impl ConfigParser {
                     let fn_name = ident.sym.as_ref();
                     return match fn_name {
                         "dir" | "directory" => self.eval_dir(call, variables, imported_layouts),
-                        "file" => self.eval_file(call),
+                        "file" => self.eval_file(call, variables),
                         "opt" | "optional" => self.eval_opt(call, variables, imported_layouts),
                         "required" => self.eval_required(call, variables, imported_layouts),
                         "param" => self.eval_param(call, variables, imported_layouts),
@@ -1144,9 +1185,13 @@ impl ConfigParser {
         })
     }
 
-    fn eval_file(&self, call: &CallExpr) -> Result<LayoutNode, ParseError> {
+    fn eval_file(
+        &self,
+        call: &CallExpr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<LayoutNode, ParseError> {
         if let Some(arg) = call.args.first() {
-            if let Ok(s) = self.expect_string(&arg.expr) {
+            if let Ok(s) = self.eval_string_expr(&arg.expr, variables) {
                 return Ok(LayoutNode::File {
                     pattern: Some(s),
                     optional: false,
@@ -1159,13 +1204,32 @@ impl ConfigParser {
                 let mut case = None;
                 for prop in &obj.props {
                     if let PropOrSpread::Prop(prop) = prop {
-                        if let Prop::KeyValue(kv) = &**prop {
-                            let key = self.get_prop_name(&kv.key)?;
-                            match key.as_str() {
-                                "pattern" => pattern = Some(self.expect_string(&kv.value)?),
-                                "case" => case = Some(self.eval_case_style(&kv.value)?),
-                                _ => {}
+                        match &**prop {
+                            Prop::KeyValue(kv) => {
+                                let key = self.get_prop_name(&kv.key)?;
+                                match key.as_str() {
+                                    "pattern" => {
+                                        pattern =
+                                            Some(self.eval_string_expr(&kv.value, variables)?);
+                                    }
+                                    "case" => case = Some(self.eval_case_style(&kv.value)?),
+                                    _ => {}
+                                }
                             }
+                            Prop::Shorthand(ident) => {
+                                let key = ident.sym.as_ref();
+                                if key == "pattern" {
+                                    pattern = Some(self.eval_string_expr(
+                                        &Expr::Ident(ident.clone()),
+                                        variables,
+                                    )?);
+                                } else if key == "case" {
+                                    let value = self
+                                        .eval_string_expr(&Expr::Ident(ident.clone()), variables)?;
+                                    case = Some(self.case_style_from_string(&value)?);
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -1379,7 +1443,11 @@ impl ConfigParser {
 
     fn eval_case_style(&self, expr: &Expr) -> Result<CaseStyle, ParseError> {
         let s = self.expect_string(expr)?;
-        match s.as_str() {
+        self.case_style_from_string(&s)
+    }
+
+    fn case_style_from_string(&self, value: &str) -> Result<CaseStyle, ParseError> {
+        match value {
             "kebab" => Ok(CaseStyle::Kebab),
             "snake" => Ok(CaseStyle::Snake),
             "camel" => Ok(CaseStyle::Camel),
@@ -1389,7 +1457,7 @@ impl ConfigParser {
                 field: "case".to_string(),
                 message: format!(
                     "expected 'kebab', 'snake', 'camel', 'pascal', or 'any', got '{}'",
-                    s
+                    value
                 ),
             }),
         }
@@ -1414,9 +1482,15 @@ impl ConfigParser {
                 if let Prop::KeyValue(kv) = &**prop {
                     let key = self.get_prop_name(&kv.key)?;
                     match key.as_str() {
-                        "forbidPaths" => rules.forbid_paths = self.eval_string_array(&kv.value)?,
-                        "forbidNames" => rules.forbid_names = self.eval_string_array(&kv.value)?,
-                        "ignorePaths" => rules.ignore_paths = self.eval_string_array(&kv.value)?,
+                        "forbidPaths" => {
+                            rules.forbid_paths = self.eval_string_array(&kv.value, variables)?;
+                        }
+                        "forbidNames" => {
+                            rules.forbid_names = self.eval_string_array(&kv.value, variables)?;
+                        }
+                        "ignorePaths" => {
+                            rules.ignore_paths = self.eval_string_array(&kv.value, variables)?;
+                        }
                         _ => {}
                     }
                 }
@@ -1482,7 +1556,7 @@ impl ConfigParser {
                 if let Prop::KeyValue(kv) = &**prop {
                     let key = self.get_prop_name(&kv.key)?;
                     if key == "allow" {
-                        deps.allow = self.eval_deps_allow(&kv.value)?;
+                        deps.allow = self.eval_deps_allow(&kv.value, variables)?;
                     }
                 }
             }
@@ -1491,7 +1565,11 @@ impl ConfigParser {
         Ok(deps)
     }
 
-    fn eval_deps_allow(&self, expr: &Expr) -> Result<Vec<DepsAllowRule>, ParseError> {
+    fn eval_deps_allow(
+        &self,
+        expr: &Expr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<Vec<DepsAllowRule>, ParseError> {
         let arr = self.expect_array(expr)?;
         let mut rules = Vec::new();
 
@@ -1506,7 +1584,7 @@ impl ConfigParser {
                         let key = self.get_prop_name(&kv.key)?;
                         match key.as_str() {
                             "from" => from = self.expect_string(&kv.value)?,
-                            "to" => to = self.eval_string_array(&kv.value)?,
+                            "to" => to = self.eval_string_array(&kv.value, variables)?,
                             _ => {}
                         }
                     }
@@ -1519,11 +1597,15 @@ impl ConfigParser {
         Ok(rules)
     }
 
-    fn eval_string_array(&self, expr: &Expr) -> Result<Vec<String>, ParseError> {
+    fn eval_string_array(
+        &self,
+        expr: &Expr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<Vec<String>, ParseError> {
         let arr = self.expect_array(expr)?;
         let mut result = Vec::new();
         for elem in arr.elems.iter().flatten() {
-            result.push(self.expect_string(&elem.expr)?);
+            result.push(self.eval_string_expr(&elem.expr, variables)?);
         }
         Ok(result)
     }
@@ -1543,11 +1625,11 @@ impl ConfigParser {
             }
             // Then check local variables
             if let Some(var_expr) = variables.get(name) {
-                return self.eval_string_array(var_expr);
+                return self.eval_string_array(var_expr, variables);
             }
         }
         // Fall back to direct evaluation
-        self.eval_string_array(expr)
+        self.eval_string_array(expr, variables)
     }
 
     fn eval_rules_with_imports(
@@ -1686,7 +1768,7 @@ impl ConfigParser {
                             if let Prop::KeyValue(req_kv) = &**req_prop {
                                 let req_key = self.get_prop_name(&req_kv.key)?;
                                 if req_key == "requires" {
-                                    requires = self.eval_string_array(&req_kv.value)?;
+                                    requires = self.eval_string_array(&req_kv.value, variables)?;
                                 }
                             }
                         }
@@ -1739,6 +1821,163 @@ impl ConfigParser {
             col: loc.1,
             message: "Expected string literal".to_string(),
         })
+    }
+
+    fn eval_string_expr(
+        &self,
+        expr: &Expr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<String, ParseError> {
+        match expr {
+            Expr::Lit(Lit::Str(s)) => Ok(s.value.to_string()),
+            Expr::Tpl(tpl) => {
+                if tpl.exprs.is_empty() && tpl.quasis.len() == 1 {
+                    return Ok(tpl.quasis[0].raw.to_string());
+                }
+                let mut out = String::new();
+                for (idx, quasi) in tpl.quasis.iter().enumerate() {
+                    out.push_str(quasi.raw.as_ref());
+                    if let Some(expr) = tpl.exprs.get(idx) {
+                        let part = self.eval_string_expr(expr, variables)?;
+                        out.push_str(&part);
+                    }
+                }
+                Ok(out)
+            }
+            Expr::Ident(ident) => {
+                let name = ident.sym.as_ref();
+                if let Some(var_expr) = variables.get(name) {
+                    return self.eval_string_expr(var_expr, variables);
+                }
+                let loc = self.get_expr_location(expr);
+                Err(ParseError::UnsupportedExpression {
+                    line: loc.0,
+                    col: loc.1,
+                    message: format!("Unknown variable: {}", name),
+                })
+            }
+            Expr::Bin(bin) => {
+                if bin.op == BinaryOp::Add {
+                    let left = self.eval_string_expr(&bin.left, variables)?;
+                    let right = self.eval_string_expr(&bin.right, variables)?;
+                    return Ok(format!("{}{}", left, right));
+                }
+                let loc = self.get_expr_location(expr);
+                Err(ParseError::UnsupportedExpression {
+                    line: loc.0,
+                    col: loc.1,
+                    message: "Expected string expression".to_string(),
+                })
+            }
+            Expr::Call(call) => self.eval_string_call(call, variables),
+            Expr::Paren(paren) => self.eval_string_expr(&paren.expr, variables),
+            _ => {
+                let loc = self.get_expr_location(expr);
+                Err(ParseError::UnsupportedExpression {
+                    line: loc.0,
+                    col: loc.1,
+                    message: "Expected string literal".to_string(),
+                })
+            }
+        }
+    }
+
+    fn eval_string_call(
+        &self,
+        call: &CallExpr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<String, ParseError> {
+        let Some(callee_expr) = call.callee.as_expr() else {
+            let loc = self.get_expr_location(&Expr::Call(call.clone()));
+            return Err(ParseError::UnsupportedExpression {
+                line: loc.0,
+                col: loc.1,
+                message: "Expected string expression".to_string(),
+            });
+        };
+        let Expr::Member(member) = &**callee_expr else {
+            let loc = self.get_expr_location(&Expr::Call(call.clone()));
+            return Err(ParseError::UnsupportedExpression {
+                line: loc.0,
+                col: loc.1,
+                message: "Expected string expression".to_string(),
+            });
+        };
+        let name = match &member.prop {
+            MemberProp::Ident(ident) => ident.sym.to_string(),
+            MemberProp::Computed(c) => match &*c.expr {
+                Expr::Lit(Lit::Str(s)) => s.value.to_string(),
+                _ => {
+                    let loc = self.get_expr_location(&Expr::Call(call.clone()));
+                    return Err(ParseError::UnsupportedExpression {
+                        line: loc.0,
+                        col: loc.1,
+                        message: "Expected string expression".to_string(),
+                    });
+                }
+            },
+            _ => {
+                let loc = self.get_expr_location(&Expr::Call(call.clone()));
+                return Err(ParseError::UnsupportedExpression {
+                    line: loc.0,
+                    col: loc.1,
+                    message: "Expected string expression".to_string(),
+                });
+            }
+        };
+
+        if name == "join" {
+            let items = self.eval_string_array_expr(&member.obj, variables)?;
+            let sep = if let Some(arg) = call.args.first() {
+                self.eval_string_expr(&arg.expr, variables)?
+            } else {
+                ",".to_string()
+            };
+            return Ok(items.join(&sep));
+        }
+
+        let loc = self.get_expr_location(&Expr::Call(call.clone()));
+        Err(ParseError::UnsupportedExpression {
+            line: loc.0,
+            col: loc.1,
+            message: "Expected string expression".to_string(),
+        })
+    }
+
+    fn eval_string_array_expr(
+        &self,
+        expr: &Expr,
+        variables: &HashMap<String, &Expr>,
+    ) -> Result<Vec<String>, ParseError> {
+        match expr {
+            Expr::Array(arr) => {
+                let mut result = Vec::new();
+                for elem in arr.elems.iter().flatten() {
+                    result.push(self.eval_string_expr(&elem.expr, variables)?);
+                }
+                Ok(result)
+            }
+            Expr::Ident(ident) => {
+                let name = ident.sym.as_ref();
+                if let Some(var_expr) = variables.get(name) {
+                    return self.eval_string_array_expr(var_expr, variables);
+                }
+                let loc = self.get_expr_location(expr);
+                Err(ParseError::UnsupportedExpression {
+                    line: loc.0,
+                    col: loc.1,
+                    message: format!("Unknown variable: {}", name),
+                })
+            }
+            _ => {
+                let loc = self.get_expr_location(expr);
+                Err(ParseError::UnsupportedExpression {
+                    line: loc.0,
+                    col: loc.1,
+                    message: "Expected array literal".to_string(),
+                })
+            }
+        }
     }
 
     fn expect_bool(&self, expr: &Expr) -> Result<bool, ParseError> {
@@ -2778,6 +3017,41 @@ export default defineConfig({ layout });
     }
 
     #[test]
+    fn test_string_template_with_join_in_file_pattern() {
+        let parser = ConfigParser::new();
+        let config = r#"
+import { defineConfig, directory, file, many } from "repo-lint";
+
+const exts = ["ts", "tsx"];
+const pattern = `*.{${exts.join(",")}}`;
+
+export default defineConfig({
+    layout: directory({
+        src: directory({
+            $f: many(file({ pattern })),
+        }),
+    }),
+});
+"#;
+
+        let ir = parser.parse_string(config, "test.ts").unwrap();
+        let layout_node = ir.layout.unwrap();
+        let LayoutNode::Dir { children, .. } = layout_node else {
+            panic!("expected root dir");
+        };
+        let LayoutNode::Dir { children, .. } = children.get("src").unwrap() else {
+            panic!("expected src dir");
+        };
+        let LayoutNode::Many { child, .. } = children.get("$f").unwrap() else {
+            panic!("expected many node");
+        };
+        let LayoutNode::File { pattern, .. } = child.as_ref() else {
+            panic!("expected file node");
+        };
+        assert_eq!(pattern.as_deref(), Some("*.{ts,tsx}"));
+    }
+
+    #[test]
     fn test_resolve_workspace_package_ignores_node_modules() {
         let temp = TempDir::new().unwrap();
         let root = temp.path();
@@ -2799,6 +3073,35 @@ export default defineConfig({ layout });
             "",
         )
         .unwrap();
+
+        let parser = ConfigParser::new();
+        let resolved = parser.resolve_workspace_package(root, "@acme/pkg");
+        assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn test_resolve_workspace_package_respects_root_ignore() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        fs::write(
+            root.join("package.json"),
+            r#"{"workspaces":["packages/*"]}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("repo-lint.config.ts"),
+            r#"import { defineConfig } from "repo-lint"; export default defineConfig({ ignore: ["ignored"] });"#,
+        )
+        .unwrap();
+
+        fs::create_dir_all(root.join("packages/ignored/@acme/pkg/src")).unwrap();
+        fs::write(
+            root.join("packages/ignored/@acme/pkg/package.json"),
+            r#"{"name":"@acme/pkg"}"#,
+        )
+        .unwrap();
+        fs::write(root.join("packages/ignored/@acme/pkg/src/index.ts"), "").unwrap();
 
         let parser = ConfigParser::new();
         let resolved = parser.resolve_workspace_package(root, "@acme/pkg");
