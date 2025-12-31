@@ -256,25 +256,71 @@ impl<'a> PostValidator<'a> {
         from_ext: &str,
         to_ext: &str,
     ) -> String {
-        let source_base = source_pattern.replace('*', "");
-        let target_base = target_pattern.replace('*', "");
+        // Extract wildcard values from source using source_pattern
+        // source_pattern: "src/modules/*/*.ts"
+        // source: "src/modules/ai-chat/controller.ts"
+        // target_pattern: "tests/modules/*/*.test.ts"
+        // Expected: "tests/modules/ai-chat/controller.test.ts"
 
-        let mut target =
-            source.replace(source_base.trim_matches('/'), target_base.trim_matches('/'));
+        let source_parts: Vec<&str> = source_pattern.split('/').collect();
+        let target_parts: Vec<&str> = target_pattern.split('/').collect();
+        let actual_parts: Vec<&str> = source.split('/').collect();
 
-        if from_ext != "*" && to_ext != "*" {
-            let from_suffix = from_ext.trim_start_matches('*');
-            let to_suffix = to_ext.trim_start_matches('*');
-            if target.ends_with(from_suffix) {
-                target = format!(
-                    "{}{}",
-                    &target[..target.len() - from_suffix.len()],
-                    to_suffix
-                );
+        // Build target by substituting wildcards
+        let mut result_parts: Vec<String> = Vec::new();
+        let mut wildcard_values: Vec<String> = Vec::new();
+
+        // First pass: extract wildcard values from source
+        for (i, pattern_part) in source_parts.iter().enumerate() {
+            if i < actual_parts.len() {
+                if pattern_part.contains('*') {
+                    // Extract the value matched by this wildcard
+                    let prefix = pattern_part.split('*').next().unwrap_or("");
+                    let suffix = pattern_part.split('*').last().unwrap_or("");
+                    let actual = actual_parts[i];
+
+                    let value = actual
+                        .strip_prefix(prefix)
+                        .and_then(|s| s.strip_suffix(suffix))
+                        .unwrap_or(actual);
+                    wildcard_values.push(value.to_string());
+                }
             }
         }
 
-        target
+        // Second pass: build target using wildcard values
+        let mut wildcard_idx = 0;
+        for target_part in &target_parts {
+            if target_part.contains('*') {
+                if wildcard_idx < wildcard_values.len() {
+                    let prefix = target_part.split('*').next().unwrap_or("");
+                    let suffix = target_part.split('*').last().unwrap_or("");
+                    let mut value = wildcard_values[wildcard_idx].clone();
+
+                    // Apply extension transformation if this is the last part (filename)
+                    if from_ext != "*" && to_ext != "*" {
+                        let from_suffix = from_ext.trim_start_matches('*');
+                        let to_suffix = to_ext.trim_start_matches('*');
+                        if value.ends_with(from_suffix) {
+                            value = format!(
+                                "{}{}",
+                                &value[..value.len() - from_suffix.len()],
+                                to_suffix
+                            );
+                        }
+                    }
+
+                    result_parts.push(format!("{}{}{}", prefix, value, suffix));
+                    wildcard_idx += 1;
+                } else {
+                    result_parts.push(target_part.to_string());
+                }
+            } else {
+                result_parts.push(target_part.to_string());
+            }
+        }
+
+        result_parts.join("/")
     }
 
     fn validate_when(&self, root_path: &Path, severity: Severity) -> Vec<Violation> {

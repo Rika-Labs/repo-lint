@@ -17,6 +17,10 @@ All notable changes to this project will be documented in this file.
   })
   ```
 
+### Fixed
+
+- **Mirror Path Resolution**: Fixed mirror target path computation for patterns with multiple wildcards. Previously, patterns like `src/modules/*/*.ts -> tests/modules/*/*.test.ts` incorrectly computed the target path. Now wildcards are properly extracted from the source and substituted into the target pattern.
+
 ## [0.3.10] - 2024-12-19
 
 ### Fixed
