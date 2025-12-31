@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.13] - 2025-12-31
+
+### Fixed
+
+- **Workspace Package Resolution**: Avoids scanning `node_modules` and other large build directories during workspace package resolution and caches results to prevent repeated filesystem walks.
+
 ## [0.3.12] - 2025-01-01
 
 ### Added

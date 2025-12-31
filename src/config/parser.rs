@@ -38,6 +38,7 @@ use std::cell::RefCell;
 pub struct ConfigParser {
     source_map: Lrc<SourceMap>,
     module_exports_cache: RefCell<HashMap<PathBuf, ModuleExports>>,
+    workspace_package_cache: RefCell<HashMap<String, Option<PathBuf>>>,
 }
 
 #[derive(Clone, Default)]
@@ -54,6 +55,7 @@ impl ConfigParser {
         Self {
             source_map: Lrc::new(SourceMap::default()),
             module_exports_cache: RefCell::new(HashMap::new()),
+            workspace_package_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -150,6 +152,16 @@ impl ConfigParser {
         }
         let root = root?;
 
+        let cache_key = format!("{}::{}", root.display(), specifier);
+        if let Some(cached) = self
+            .workspace_package_cache
+            .borrow()
+            .get(&cache_key)
+            .cloned()
+        {
+            return cached;
+        }
+
         // Search common workspace directories for package.json with matching name
         let search_dirs = ["packages", "apps", "libs"];
         for search_dir in &search_dirs {
@@ -158,10 +170,16 @@ impl ConfigParser {
                 continue;
             }
             if let Some(pkg_path) = self.find_package_in_dir(&base, &package_name, subpath) {
+                self.workspace_package_cache
+                    .borrow_mut()
+                    .insert(cache_key, Some(pkg_path.clone()));
                 return Some(pkg_path);
             }
         }
 
+        self.workspace_package_cache
+            .borrow_mut()
+            .insert(cache_key, None);
         None
     }
 
@@ -176,9 +194,37 @@ impl ConfigParser {
         };
 
         for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
+            let Ok(file_type) = entry.file_type() else {
                 continue;
+            };
+            if file_type.is_symlink() {
+                continue;
+            }
+            if !file_type.is_dir() {
+                continue;
+            }
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(
+                    name,
+                    "node_modules"
+                        | ".git"
+                        | ".hg"
+                        | ".svn"
+                        | ".next"
+                        | ".turbo"
+                        | ".submodules"
+                        | "dist"
+                        | "build"
+                        | "out"
+                        | "target"
+                        | "coverage"
+                        | "test-results"
+                        | ".cache"
+                        | ".vercel"
+                ) {
+                    continue;
+                }
             }
 
             // Check this directory
@@ -2729,5 +2775,33 @@ export default defineConfig({ layout });
             matches!(case, Some(CaseStyle::Kebab)),
             "file case should be kebab"
         );
+    }
+
+    #[test]
+    fn test_resolve_workspace_package_ignores_node_modules() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        fs::write(
+            root.join("package.json"),
+            r#"{"workspaces":["packages/*"]}"#,
+        )
+        .unwrap();
+
+        fs::create_dir_all(root.join("packages/node_modules/@acme/pkg/src")).unwrap();
+        fs::write(
+            root.join("packages/node_modules/@acme/pkg/package.json"),
+            r#"{"name":"@acme/pkg"}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("packages/node_modules/@acme/pkg/src/index.ts"),
+            "",
+        )
+        .unwrap();
+
+        let parser = ConfigParser::new();
+        let resolved = parser.resolve_workspace_package(root, "@acme/pkg");
+        assert!(resolved.is_none());
     }
 }
