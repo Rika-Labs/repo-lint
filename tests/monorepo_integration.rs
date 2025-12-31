@@ -478,3 +478,83 @@ export default defineConfig({
     assert!(paths.contains(&"apps/my-app"));
     assert!(paths.contains(&"libs/shared"));
 }
+
+#[test]
+fn test_workspace_package_import_resolution() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    // Create root package.json with workspaces
+    fs::write(
+        root.join("package.json"),
+        r#"{"name": "root", "workspaces": ["packages/*", "apps/*"]}"#,
+    )
+    .unwrap();
+
+    // Create shared config package
+    fs::create_dir_all(root.join("packages/config/repo-lint")).unwrap();
+    fs::write(
+        root.join("packages/config/package.json"),
+        r#"{"name": "@myorg/config"}"#,
+    )
+    .unwrap();
+
+    // Create shared layout in config package
+    let shared_config = r#"
+import { defineConfig, dir, file, many, opt } from "@rikalabs/repo-lint";
+
+export const sharedLayout = dir({
+    src: dir({
+        "index.ts": file(),
+        $files: many(file("*.ts")),
+    }),
+    "package.json": file(),
+});
+
+export const sharedIgnore = ["node_modules", "dist"];
+"#;
+    fs::write(
+        root.join("packages/config/repo-lint/shared.ts"),
+        shared_config,
+    )
+    .unwrap();
+
+    // Create app that imports from shared config
+    fs::create_dir_all(root.join("apps/web/src")).unwrap();
+    fs::write(
+        root.join("apps/web/package.json"),
+        r#"{"name": "@myorg/web"}"#,
+    )
+    .unwrap();
+    fs::write(root.join("apps/web/src/index.ts"), "export {}").unwrap();
+
+    let app_config = r#"
+import { defineConfig } from "@rikalabs/repo-lint";
+import { sharedLayout, sharedIgnore } from "@myorg/config/repo-lint/shared";
+
+export default defineConfig({
+    ignore: sharedIgnore,
+    layout: sharedLayout,
+});
+"#;
+    fs::write(root.join("apps/web/repo-lint.config.ts"), app_config).unwrap();
+
+    // First verify the import path resolution works
+    let parser = repo_lint::config::ConfigParser::new();
+    let import_path = parser.resolve_import(
+        &root.join("apps/web/repo-lint.config.ts"),
+        "@myorg/config/repo-lint/shared",
+    );
+    assert!(
+        import_path.is_some(),
+        "Failed to resolve workspace package import"
+    );
+
+    // Parse the app config - it should resolve the workspace package import
+    let result = parser.parse_file(&root.join("apps/web/repo-lint.config.ts"));
+
+    assert!(result.is_ok(), "Failed to parse config: {:?}", result.err());
+    let config = result.unwrap();
+    assert!(config.layout.is_some());
+    assert_eq!(config.ignore, vec!["node_modules", "dist"]);
+}

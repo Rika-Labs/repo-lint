@@ -102,6 +102,13 @@ impl ConfigParser {
             }
         }
 
+        // Try workspace package resolution for scoped packages (@org/pkg/path)
+        if specifier.starts_with('@') && !specifier.starts_with("@/") {
+            if let Some(path) = self.resolve_workspace_package(dir, specifier) {
+                return Some(path);
+            }
+        }
+
         // Try node_modules (search upwards)
         let mut current_dir = Some(dir);
         while let Some(d) = current_dir {
@@ -114,6 +121,109 @@ impl ConfigParser {
             current_dir = d.parent();
         }
 
+        None
+    }
+
+    fn resolve_workspace_package(&self, start_dir: &Path, specifier: &str) -> Option<PathBuf> {
+        // Parse @org/pkg/subpath into parts
+        let parts: Vec<&str> = specifier.splitn(3, '/').collect();
+        if parts.len() < 2 {
+            return None;
+        }
+        let package_name = format!("{}/{}", parts[0], parts[1]);
+        let subpath = if parts.len() > 2 { parts[2] } else { "" };
+
+        // Find monorepo root (has package.json with workspaces)
+        let mut root = None;
+        let mut current = Some(start_dir);
+        while let Some(d) = current {
+            let pkg_json = d.join("package.json");
+            if pkg_json.exists() {
+                if let Ok(content) = std::fs::read_to_string(&pkg_json) {
+                    if content.contains("\"workspaces\"") {
+                        root = Some(d.to_path_buf());
+                        break;
+                    }
+                }
+            }
+            current = d.parent();
+        }
+        let root = root?;
+
+        // Search common workspace directories for package.json with matching name
+        let search_dirs = ["packages", "apps", "libs"];
+        for search_dir in &search_dirs {
+            let base = root.join(search_dir);
+            if !base.exists() {
+                continue;
+            }
+            if let Some(pkg_path) = self.find_package_in_dir(&base, &package_name, subpath) {
+                return Some(pkg_path);
+            }
+        }
+
+        None
+    }
+
+    fn find_package_in_dir(
+        &self,
+        dir: &Path,
+        package_name: &str,
+        subpath: &str,
+    ) -> Option<PathBuf> {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return None;
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+
+            // Check this directory
+            let pkg_json = path.join("package.json");
+            if pkg_json.exists() {
+                if let Ok(content) = std::fs::read_to_string(&pkg_json) {
+                    if let Some(name) = self.extract_package_name(&content) {
+                        if name == package_name {
+                            let target = if subpath.is_empty() {
+                                path.join("src")
+                            } else {
+                                path.join(subpath)
+                            };
+                            return self.resolve_path(&target);
+                        }
+                    }
+                }
+            }
+
+            // Recurse into subdirectories (for nested workspaces like packages/core/*)
+            if let Some(found) = self.find_package_in_dir(&path, package_name, subpath) {
+                return Some(found);
+            }
+        }
+
+        None
+    }
+
+    fn extract_package_name(&self, content: &str) -> Option<String> {
+        // Simple regex-like search for "name": "value" pattern
+        // This handles both formatted and minified JSON
+        if let Some(start) = content.find("\"name\"") {
+            let rest = &content[start..];
+            // Find the colon after "name"
+            if let Some(colon_pos) = rest.find(':') {
+                let after_colon = rest[colon_pos + 1..].trim_start();
+                // Now extract the string value
+                if after_colon.starts_with('"') {
+                    let value_start = 1; // skip opening quote
+                    if let Some(end_quote) = after_colon[value_start..].find('"') {
+                        return Some(after_colon[value_start..value_start + end_quote].to_string());
+                    }
+                }
+            }
+        }
         None
     }
 

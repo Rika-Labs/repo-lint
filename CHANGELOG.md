@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.12] - 2025-01-01
+
+### Added
+
+- **Workspace Package Resolution**: Config files can now import from workspace packages using scoped package names (e.g., `@myorg/config/repo-lint/shared`). The parser resolves these imports by searching for `package.json` files with matching names in common workspace directories (`packages/`, `apps/`, `libs/`).
+  ```typescript
+  // In apps/web/repo-lint.config.ts
+  import { sharedLayout, sharedIgnore } from "@myorg/config/repo-lint/shared";
+
+  export default defineConfig({
+    ignore: sharedIgnore,
+    layout: sharedLayout,
+  })
+  ```
+
+### Fixed
+
+- **Package.json Name Extraction**: Fixed JSON parsing for `package.json` files to handle both formatted and minified JSON formats when resolving workspace packages.
+
 ## [0.3.11] - 2024-12-31
 
 ### Added
