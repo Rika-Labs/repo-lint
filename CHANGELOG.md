@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.11] - 2024-12-31
+
+### Added
+
+- **Import Arbitrary Constants**: Config files can now import and use string arrays, rules configs, and mirror configs from other modules. Previously, only `layout` and `when` could be imported.
+  ```typescript
+  import { elysiaDefaultIgnore, elysiaDefaultRules, elysiaMirrorConfig } from '@/shared/elysia'
+
+  export default defineConfig({
+    ignore: elysiaDefaultIgnore,  // Now works!
+    rules: elysiaDefaultRules,    // Now works!
+    mirror: elysiaMirrorConfig,   // Now works!
+  })
+  ```
+
 ## [0.3.10] - 2024-12-19
 
 ### Fixed

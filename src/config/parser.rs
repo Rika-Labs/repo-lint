@@ -44,6 +44,9 @@ pub struct ConfigParser {
 struct ModuleExports {
     layouts: HashMap<String, LayoutNode>,
     when: HashMap<String, HashMap<String, WhenRequirement>>,
+    string_arrays: HashMap<String, Vec<String>>,
+    rules: HashMap<String, RulesConfig>,
+    mirrors: HashMap<String, Vec<MirrorConfig>>,
 }
 
 impl ConfigParser {
@@ -183,6 +186,9 @@ impl ConfigParser {
         let mut variables: HashMap<String, &Expr> = HashMap::new();
         let mut imported_layouts: HashMap<String, LayoutNode> = HashMap::new();
         let mut imported_when: HashMap<String, HashMap<String, WhenRequirement>> = HashMap::new();
+        let mut imported_string_arrays: HashMap<String, Vec<String>> = HashMap::new();
+        let mut imported_rules: HashMap<String, RulesConfig> = HashMap::new();
+        let mut imported_mirrors: HashMap<String, Vec<MirrorConfig>> = HashMap::new();
 
         for item in &module.body {
             match item {
@@ -226,7 +232,16 @@ impl ConfigParser {
                                         imported_layouts.insert(local.clone(), layout.clone());
                                     }
                                     if let Some(when) = exports.when.get(&imported) {
-                                        imported_when.insert(local, when.clone());
+                                        imported_when.insert(local.clone(), when.clone());
+                                    }
+                                    if let Some(arr) = exports.string_arrays.get(&imported) {
+                                        imported_string_arrays.insert(local.clone(), arr.clone());
+                                    }
+                                    if let Some(rules) = exports.rules.get(&imported) {
+                                        imported_rules.insert(local.clone(), rules.clone());
+                                    }
+                                    if let Some(mirror) = exports.mirrors.get(&imported) {
+                                        imported_mirrors.insert(local, mirror.clone());
                                     }
                                 }
                             }
@@ -244,6 +259,9 @@ impl ConfigParser {
                     &variables,
                     &imported_layouts,
                     &imported_when,
+                    &imported_string_arrays,
+                    &imported_rules,
+                    &imported_mirrors,
                 );
             }
         }
@@ -395,7 +413,25 @@ impl ConfigParser {
                                     if let Ok(when) =
                                         self.eval_when(init, &variables, &imported_when)
                                     {
-                                        exports.when.insert(name, when);
+                                        exports.when.insert(name.clone(), when);
+                                        continue;
+                                    }
+
+                                    // Try to evaluate as string array (for ignore, forbidPaths, etc.)
+                                    if let Ok(arr) = self.eval_string_array(init) {
+                                        exports.string_arrays.insert(name.clone(), arr);
+                                        continue;
+                                    }
+
+                                    // Try to evaluate as rules config
+                                    if let Ok(rules) = self.eval_rules(init, &variables) {
+                                        exports.rules.insert(name.clone(), rules);
+                                        continue;
+                                    }
+
+                                    // Try to evaluate as mirror config
+                                    if let Ok(mirror) = self.eval_mirror(init, &variables) {
+                                        exports.mirrors.insert(name, mirror);
                                     }
                                 }
                             }
@@ -468,6 +504,16 @@ impl ConfigParser {
                                         self.eval_when(var_expr, &variables, &imported_when)
                                     {
                                         exports.when.insert(exported_name.clone(), when);
+                                    } else if let Ok(arr) = self.eval_string_array(var_expr) {
+                                        exports.string_arrays.insert(exported_name.clone(), arr);
+                                    } else if let Ok(rules) =
+                                        self.eval_rules(var_expr, &variables)
+                                    {
+                                        exports.rules.insert(exported_name.clone(), rules);
+                                    } else if let Ok(mirror) =
+                                        self.eval_mirror(var_expr, &variables)
+                                    {
+                                        exports.mirrors.insert(exported_name.clone(), mirror);
                                     }
                                 }
 
@@ -494,6 +540,9 @@ impl ConfigParser {
         variables: &HashMap<String, &Expr>,
         imported_layouts: &HashMap<String, LayoutNode>,
         imported_when: &HashMap<String, HashMap<String, WhenRequirement>>,
+        imported_string_arrays: &HashMap<String, Vec<String>>,
+        imported_rules: &HashMap<String, RulesConfig>,
+        imported_mirrors: &HashMap<String, Vec<MirrorConfig>>,
     ) -> Result<ConfigIR, ParseError> {
         if let Expr::Call(call) = expr {
             if let Callee::Expr(callee_expr) = &call.callee {
@@ -519,6 +568,9 @@ impl ConfigParser {
                                 variables,
                                 imported_layouts,
                                 imported_when,
+                                imported_string_arrays,
+                                imported_rules,
+                                imported_mirrors,
                             );
                         }
                     } else if fn_name == "nextjsPreset" {
@@ -630,6 +682,9 @@ impl ConfigParser {
         variables: &HashMap<String, &Expr>,
         imported_layouts: &HashMap<String, LayoutNode>,
         imported_when: &HashMap<String, HashMap<String, WhenRequirement>>,
+        imported_string_arrays: &HashMap<String, Vec<String>>,
+        imported_rules: &HashMap<String, RulesConfig>,
+        imported_mirrors: &HashMap<String, Vec<MirrorConfig>>,
     ) -> Result<ConfigIR, ParseError> {
         let obj = self.expect_object(expr)?;
 
@@ -660,16 +715,40 @@ impl ConfigParser {
                                     imported_layouts,
                                 )?)
                             }
-                            "rules" => rules = self.eval_rules(&kv.value, variables)?,
+                            "rules" => {
+                                rules = self.eval_rules_with_imports(
+                                    &kv.value,
+                                    variables,
+                                    imported_rules,
+                                )?
+                            }
                             "boundaries" => {
                                 boundaries = Some(self.eval_boundaries(&kv.value, variables)?)
                             }
                             "deps" => deps = Some(self.eval_deps(&kv.value, variables)?),
-                            "ignore" => ignore = self.eval_string_array(&kv.value)?,
+                            "ignore" => {
+                                ignore = self.eval_string_array_with_imports(
+                                    &kv.value,
+                                    variables,
+                                    imported_string_arrays,
+                                )?
+                            }
                             "useGitignore" => use_gitignore = self.eval_bool(&kv.value)?,
-                            "workspaces" => workspaces = self.eval_string_array(&kv.value)?,
+                            "workspaces" => {
+                                workspaces = self.eval_string_array_with_imports(
+                                    &kv.value,
+                                    variables,
+                                    imported_string_arrays,
+                                )?
+                            }
                             "dependencies" => dependencies = self.eval_dependencies(&kv.value)?,
-                            "mirror" => mirror = self.eval_mirror(&kv.value, variables)?,
+                            "mirror" => {
+                                mirror = self.eval_mirror_with_imports(
+                                    &kv.value,
+                                    variables,
+                                    imported_mirrors,
+                                )?
+                            }
                             "when" => when = self.eval_when(&kv.value, variables, imported_when)?,
                             "extends" => extends = Some(self.expect_string(&kv.value)?),
                             _ => {}
@@ -700,7 +779,9 @@ impl ConfigParser {
                                 }
                             }
                             "rules" => {
-                                if let Some(var_expr) = variables.get(&key) {
+                                if let Some(r) = imported_rules.get(&key) {
+                                    rules = r.clone();
+                                } else if let Some(var_expr) = variables.get(&key) {
                                     rules = self.eval_rules(var_expr, variables)?;
                                 }
                             }
@@ -715,7 +796,9 @@ impl ConfigParser {
                                 }
                             }
                             "mirror" => {
-                                if let Some(var_expr) = variables.get(&key) {
+                                if let Some(m) = imported_mirrors.get(&key) {
+                                    mirror = m.clone();
+                                } else if let Some(var_expr) = variables.get(&key) {
                                     mirror = self.eval_mirror(var_expr, variables)?;
                                 }
                             }
@@ -727,12 +810,16 @@ impl ConfigParser {
                                 }
                             }
                             "ignore" => {
-                                if let Some(var_expr) = variables.get(&key) {
+                                if let Some(arr) = imported_string_arrays.get(&key) {
+                                    ignore = arr.clone();
+                                } else if let Some(var_expr) = variables.get(&key) {
                                     ignore = self.eval_string_array(var_expr)?;
                                 }
                             }
                             "workspaces" => {
-                                if let Some(var_expr) = variables.get(&key) {
+                                if let Some(arr) = imported_string_arrays.get(&key) {
+                                    workspaces = arr.clone();
+                                } else if let Some(var_expr) = variables.get(&key) {
                                     workspaces = self.eval_string_array(var_expr)?;
                                 }
                             }
@@ -1282,6 +1369,72 @@ impl ConfigParser {
             result.push(self.expect_string(&elem.expr)?);
         }
         Ok(result)
+    }
+
+    fn eval_string_array_with_imports(
+        &self,
+        expr: &Expr,
+        variables: &HashMap<String, &Expr>,
+        imported_string_arrays: &HashMap<String, Vec<String>>,
+    ) -> Result<Vec<String>, ParseError> {
+        // Check if it's an identifier that might be imported
+        if let Expr::Ident(ident) = expr {
+            let name = ident.sym.as_ref();
+            // First check imported string arrays
+            if let Some(arr) = imported_string_arrays.get(name) {
+                return Ok(arr.clone());
+            }
+            // Then check local variables
+            if let Some(var_expr) = variables.get(name) {
+                return self.eval_string_array(var_expr);
+            }
+        }
+        // Fall back to direct evaluation
+        self.eval_string_array(expr)
+    }
+
+    fn eval_rules_with_imports(
+        &self,
+        expr: &Expr,
+        variables: &HashMap<String, &Expr>,
+        imported_rules: &HashMap<String, RulesConfig>,
+    ) -> Result<RulesConfig, ParseError> {
+        // Check if it's an identifier that might be imported
+        if let Expr::Ident(ident) = expr {
+            let name = ident.sym.as_ref();
+            // First check imported rules
+            if let Some(rules) = imported_rules.get(name) {
+                return Ok(rules.clone());
+            }
+            // Then check local variables
+            if let Some(var_expr) = variables.get(name) {
+                return self.eval_rules(var_expr, variables);
+            }
+        }
+        // Fall back to direct evaluation
+        self.eval_rules(expr, variables)
+    }
+
+    fn eval_mirror_with_imports(
+        &self,
+        expr: &Expr,
+        variables: &HashMap<String, &Expr>,
+        imported_mirrors: &HashMap<String, Vec<MirrorConfig>>,
+    ) -> Result<Vec<MirrorConfig>, ParseError> {
+        // Check if it's an identifier that might be imported
+        if let Expr::Ident(ident) = expr {
+            let name = ident.sym.as_ref();
+            // First check imported mirrors
+            if let Some(mirror) = imported_mirrors.get(name) {
+                return Ok(mirror.clone());
+            }
+            // Then check local variables
+            if let Some(var_expr) = variables.get(name) {
+                return self.eval_mirror(var_expr, variables);
+            }
+        }
+        // Fall back to direct evaluation
+        self.eval_mirror(expr, variables)
     }
 
     fn eval_dependencies(&self, expr: &Expr) -> Result<HashMap<String, String>, ParseError> {
