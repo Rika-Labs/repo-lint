@@ -2,16 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.3.12] - 2024-12-31
-
-### Added
-
-- **Import Arbitrary Constants**: Config files can now import and use string arrays, rules configs, and mirror configs from other modules. Previously, only `layout` and `when` could be imported.
-
-### Fixed
-
-- **Mirror Path Resolution**: Fixed mirror target path computation for patterns with multiple wildcards. Previously, patterns like `src/modules/*/*.ts -> tests/modules/*/*.test.ts` incorrectly computed the target path. Now wildcards are properly extracted from the source and substituted into the target pattern.
-
 ## [0.3.11] - 2024-12-31
 
 ### Added

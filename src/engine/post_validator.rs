@@ -272,19 +272,17 @@ impl<'a> PostValidator<'a> {
 
         // First pass: extract wildcard values from source
         for (i, pattern_part) in source_parts.iter().enumerate() {
-            if i < actual_parts.len() {
-                if pattern_part.contains('*') {
-                    // Extract the value matched by this wildcard
-                    let prefix = pattern_part.split('*').next().unwrap_or("");
-                    let suffix = pattern_part.split('*').next_back().unwrap_or("");
-                    let actual = actual_parts[i];
+            if i < actual_parts.len() && pattern_part.contains('*') {
+                // Extract the value matched by this wildcard
+                let prefix = pattern_part.split('*').next().unwrap_or("");
+                let suffix = pattern_part.split('*').next_back().unwrap_or("");
+                let actual = actual_parts[i];
 
-                    let value = actual
-                        .strip_prefix(prefix)
-                        .and_then(|s| s.strip_suffix(suffix))
-                        .unwrap_or(actual);
-                    wildcard_values.push(value.to_string());
-                }
+                let value = actual
+                    .strip_prefix(prefix)
+                    .and_then(|s| s.strip_suffix(suffix))
+                    .unwrap_or(actual);
+                wildcard_values.push(value.to_string());
             }
         }
 

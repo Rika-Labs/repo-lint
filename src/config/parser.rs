@@ -506,8 +506,7 @@ impl ConfigParser {
                                         exports.when.insert(exported_name.clone(), when);
                                     } else if let Ok(arr) = self.eval_string_array(var_expr) {
                                         exports.string_arrays.insert(exported_name.clone(), arr);
-                                    } else if let Ok(rules) =
-                                        self.eval_rules(var_expr, &variables)
+                                    } else if let Ok(rules) = self.eval_rules(var_expr, &variables)
                                     {
                                         exports.rules.insert(exported_name.clone(), rules);
                                     } else if let Ok(mirror) =
@@ -534,6 +533,7 @@ impl ConfigParser {
         Ok(exports)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn eval_define_config(
         &self,
         expr: &Expr,
@@ -676,6 +676,7 @@ impl ConfigParser {
         Ok(ConfigIR::new(layout))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn eval_config_object(
         &self,
         expr: &Expr,
