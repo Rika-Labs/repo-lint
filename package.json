@@ -1,0 +1,43 @@
+{
+  "name": "@rikalabs/repo-lint",
+  "version": "0.5.0",
+  "description": "High-performance filesystem layout linter with YAML config",
+  "keywords": ["lint", "architecture", "filesystem", "layout", "monorepo", "workspace", "bun"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rika-Labs/repo-lint.git"
+  },
+  "homepage": "https://github.com/Rika-Labs/repo-lint#readme",
+  "author": "Rika Labs",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "repo-lint": "dist/index.js"
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "dev": "bun run src/cli.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "test": "bun test",
+    "lint": "oxlint . && bun run typecheck && bun run knip",
+    "typecheck": "bun x tsc --noEmit",
+    "knip": "bun x knip",
+    "check": "bun run lint && bun test && bun run dev -- check",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
+    "@types/bun": "latest",
+    "husky": "^9.1.7",
+    "knip": "^5.61.1",
+    "oxlint": "^1.38.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "effect": "^3.19.14",
+    "yaml": "^2.7.0",
+    "picomatch": "^4.0.2"
+  }
+}

@@ -1,0 +1,97 @@
+# repo-lint dogfooding configuration
+version: 1
+
+settings:
+  root: "."
+  ignore:
+    - "node_modules/**"
+    - "dist/**"
+    - ".git/**"
+    - "test/fixtures/**"
+    - "*.d.ts"
+
+naming:
+  rules:
+    - pattern: "src/**/*.ts"
+      style: kebab-case
+      message: "Source files must use kebab-case"
+    - pattern: "test/**/*.ts"
+      style: kebab-case
+      message: "Test files must use kebab-case"
+
+structure:
+  required:
+    - path: "src"
+      message: "Source directory is required"
+    - path: "test"
+      message: "Test directory is required"
+  enforce:
+    - path: "src"
+      allowed-children:
+        - "cli"
+        - "commands"
+        - "config"
+        - "core"
+        - "rules"
+        - "output"
+        - "cache"
+        - "types"
+        - "errors.ts"
+        - "index.ts"
+      message: "Unexpected directory in src/"
+
+boundaries:
+  layers:
+    - name: cli
+      pattern: "src/cli/**"
+    - name: commands
+      pattern: "src/commands/**"
+    - name: core
+      pattern: "src/core/**"
+    - name: rules
+      pattern: "src/rules/**"
+    - name: output
+      pattern: "src/output/**"
+    - name: cache
+      pattern: "src/cache/**"
+    - name: config
+      pattern: "src/config/**"
+    - name: types
+      pattern: "src/types/**"
+  rules:
+    - from: types
+      allow: []
+      message: "Types should not import from other layers"
+    - from: core
+      allow: [types]
+      message: "Core can only import from types"
+    - from: cache
+      allow: [types, core]
+      message: "Cache can only import from types and core"
+    - from: config
+      allow: [types, core]
+      message: "Config can only import from types and core"
+    - from: output
+      allow: [types]
+      message: "Output can only import from types"
+    - from: rules
+      allow: [types, core, config]
+      message: "Rules can import from types, core, and config"
+    - from: commands
+      allow: [types, core, config, rules, output, cache]
+      message: "Commands can import from most layers"
+    - from: cli
+      allow: [types, commands]
+      message: "CLI should only import from types and commands"
+
+custom:
+  - name: no-any
+    pattern: "src/**/*.ts"
+    match: ":\\s*any\\b"
+    severity: warn
+    message: "Avoid explicit 'any' type"
+
+limits:
+  - pattern: "src/**/*.ts"
+    max-lines: 400
+    message: "Files should be under 400 lines"

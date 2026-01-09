@@ -1,0 +1,84 @@
+import { describe, expect, test, beforeAll, afterAll } from "bun:test";
+import { Effect, Exit } from "effect";
+import { scan, fileExists, readFileContent } from "../src/scanner.js";
+import { mkdir, writeFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
+let testDir: string;
+
+beforeAll(async () => {
+  testDir = join(tmpdir(), `repo-lint-test-${Date.now()}`);
+  await mkdir(testDir, { recursive: true });
+  await mkdir(join(testDir, "src"));
+  await writeFile(join(testDir, "src/index.ts"), "export {}");
+  await writeFile(join(testDir, "package.json"), "{}");
+  await mkdir(join(testDir, "node_modules"));
+  await writeFile(join(testDir, "node_modules/dep.js"), "");
+});
+
+afterAll(async () => {
+  await rm(testDir, { recursive: true, force: true });
+});
+
+describe("scan", () => {
+  test("scans directory recursively", async () => {
+    const files = await Effect.runPromise(scan({ root: testDir, ignore: [] }));
+
+    expect(files.length).toBeGreaterThan(0);
+    expect(files.some((f) => f.relativePath === "src")).toBe(true);
+    expect(files.some((f) => f.relativePath === "src/index.ts")).toBe(true);
+    expect(files.some((f) => f.relativePath === "package.json")).toBe(true);
+  });
+
+  test("respects ignore patterns", async () => {
+    const files = await Effect.runPromise(scan({ root: testDir, ignore: ["node_modules/**"] }));
+
+    expect(files.some((f) => f.relativePath.includes("node_modules"))).toBe(false);
+    expect(files.some((f) => f.relativePath === "src/index.ts")).toBe(true);
+  });
+
+  test("marks directories correctly", async () => {
+    const files = await Effect.runPromise(scan({ root: testDir, ignore: [] }));
+
+    const srcDir = files.find((f) => f.relativePath === "src");
+    const indexFile = files.find((f) => f.relativePath === "src/index.ts");
+
+    expect(srcDir?.isDirectory).toBe(true);
+    expect(indexFile?.isDirectory).toBe(false);
+  });
+
+  test("calculates depth correctly", async () => {
+    const files = await Effect.runPromise(scan({ root: testDir, ignore: [] }));
+
+    const srcDir = files.find((f) => f.relativePath === "src");
+    const indexFile = files.find((f) => f.relativePath === "src/index.ts");
+
+    expect(srcDir?.depth).toBe(1);
+    expect(indexFile?.depth).toBe(2);
+  });
+});
+
+describe("fileExists", () => {
+  test("returns true for existing file", async () => {
+    const exists = await Effect.runPromise(fileExists(join(testDir, "package.json")));
+    expect(exists).toBe(true);
+  });
+
+  test("returns false for non-existing file", async () => {
+    const exists = await Effect.runPromise(fileExists(join(testDir, "nonexistent.ts")));
+    expect(exists).toBe(false);
+  });
+});
+
+describe("readFileContent", () => {
+  test("reads file content", async () => {
+    const content = await Effect.runPromise(readFileContent(join(testDir, "package.json")));
+    expect(content).toBe("{}");
+  });
+
+  test("fails for non-existing file", async () => {
+    const exit = await Effect.runPromiseExit(readFileContent(join(testDir, "nonexistent.ts")));
+    expect(Exit.isFailure(exit)).toBe(true);
+  });
+});
