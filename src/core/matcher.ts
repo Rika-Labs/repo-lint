@@ -5,6 +5,7 @@ export type Matcher = (path: string) => boolean;
 
 export const createMatcher = (patterns: string | readonly string[]): Matcher => {
   const list = Array.isArray(patterns) ? patterns : [patterns];
+  if (list.length === 0) return () => false;
   const matchers = list.map((p) => picomatch(p, { dot: true, bash: true }));
   return (path: string) => matchers.some((m) => m(path));
 };
@@ -52,3 +53,8 @@ export const getDepth = (p: string): number => (p === "" ? 0 : p.split("/").leng
 
 export const joinPath = (...parts: readonly string[]): string =>
   parts.filter(Boolean).join("/");
+
+/**
+ * Normalize unicode strings to NFC form for consistent comparison
+ */
+export const normalizeUnicode = (s: string): string => s.normalize("NFC");

@@ -4,8 +4,13 @@ import {
   ConfigNotFoundError,
   ConfigParseError,
   ConfigValidationError,
+  CircularExtendsError,
+  PathTraversalError,
   FileSystemError,
   ScanError,
+  SymlinkLoopError,
+  MaxDepthExceededError,
+  MaxFilesExceededError,
 } from "../src/errors.js";
 
 describe("ConfigNotFoundError", () => {
@@ -24,6 +29,11 @@ describe("ConfigNotFoundError", () => {
       const maybeError = Cause.failureOption(exit.cause);
       expect(maybeError._tag).toBe("Some");
     }
+  });
+
+  test("has descriptive message", () => {
+    const error = new ConfigNotFoundError({ path: "/test/path" });
+    expect(error.message).toContain("/test/path");
   });
 });
 
@@ -48,6 +58,31 @@ describe("ConfigValidationError", () => {
   });
 });
 
+describe("CircularExtendsError", () => {
+  test("creates tagged error with chain", () => {
+    const error = new CircularExtendsError({
+      path: "/c.yaml",
+      chain: ["/a.yaml", "/b.yaml"],
+    });
+    expect(error._tag).toBe("CircularExtendsError");
+    expect(error.chain).toHaveLength(2);
+    expect(error.message).toContain("/a.yaml");
+    expect(error.message).toContain("/b.yaml");
+    expect(error.message).toContain("/c.yaml");
+  });
+});
+
+describe("PathTraversalError", () => {
+  test("creates tagged error with path info", () => {
+    const error = new PathTraversalError({
+      path: "../../../etc/passwd",
+      configPath: "/project/config.yaml",
+    });
+    expect(error._tag).toBe("PathTraversalError");
+    expect(error.message).toContain("traversal");
+  });
+});
+
 describe("FileSystemError", () => {
   test("creates tagged error with operation details", () => {
     const error = new FileSystemError({
@@ -61,7 +96,7 @@ describe("FileSystemError", () => {
 
   test("can be caught with Effect.catchTag", async () => {
     const program = Effect.fail(
-      new FileSystemError({ path: "/test", operation: "read", cause: "failed" })
+      new FileSystemError({ path: "/test", operation: "read", cause: "failed" }),
     ).pipe(Effect.catchTag("FileSystemError", (e) => Effect.succeed(`caught: ${e.path}`)));
 
     const result = await Effect.runPromise(program);
@@ -74,5 +109,30 @@ describe("ScanError", () => {
     const error = new ScanError({ root: "/project", cause: new Error("failed") });
     expect(error._tag).toBe("ScanError");
     expect(error.root).toBe("/project");
+  });
+});
+
+describe("SymlinkLoopError", () => {
+  test("creates tagged error with symlink info", () => {
+    const error = new SymlinkLoopError({ path: "/link", target: "/parent" });
+    expect(error._tag).toBe("SymlinkLoopError");
+    expect(error.message).toContain("loop");
+  });
+});
+
+describe("MaxDepthExceededError", () => {
+  test("creates tagged error with depth info", () => {
+    const error = new MaxDepthExceededError({ path: "/deep/path", depth: 150, maxDepth: 100 });
+    expect(error._tag).toBe("MaxDepthExceededError");
+    expect(error.message).toContain("150");
+    expect(error.message).toContain("100");
+  });
+});
+
+describe("MaxFilesExceededError", () => {
+  test("creates tagged error with count info", () => {
+    const error = new MaxFilesExceededError({ count: 200000, maxFiles: 100000 });
+    expect(error._tag).toBe("MaxFilesExceededError");
+    expect(error.message).toContain("200000");
   });
 });

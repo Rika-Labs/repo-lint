@@ -9,7 +9,8 @@ import type {
   Violation,
   CheckResult,
   FileEntry,
-} from "../src/types.js";
+} from "../src/types/index.js";
+import { RuleNames } from "../src/types/index.js";
 
 describe("types", () => {
   test("CaseStyle type includes expected values", () => {
@@ -109,10 +110,18 @@ describe("types", () => {
       path: "/full/path.ts",
       relativePath: "path.ts",
       isDirectory: false,
+      isSymlink: false,
       depth: 1,
     }));
 
     const entry = Effect.runSync(createEntry);
     expect(entry.isDirectory).toBe(false);
+  });
+
+  test("RuleNames are defined", () => {
+    expect(RuleNames.ForbidPaths).toBe("forbidPaths");
+    expect(RuleNames.ForbidNames).toBe("forbidNames");
+    expect(RuleNames.Layout).toBe("layout");
+    expect(RuleNames.Naming).toBe("naming");
   });
 });

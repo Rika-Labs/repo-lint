@@ -1,5 +1,5 @@
-import { Effect } from "effect";
-import type { CheckResult } from "./types.js";
+import type { CheckResult } from "../types/index.js";
+import { getVersion } from "../version.js";
 
 const RED = "\x1b[31m";
 const YELLOW = "\x1b[33m";
@@ -50,6 +50,8 @@ export const formatConsole = (result: CheckResult): string => {
 export const formatJson = (result: CheckResult): string => JSON.stringify(result, null, 2);
 
 export const formatSarif = (result: CheckResult): string => {
+  const version = getVersion();
+  
   const sarif = {
     $schema:
       "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
@@ -59,7 +61,7 @@ export const formatSarif = (result: CheckResult): string => {
         tool: {
           driver: {
             name: "repo-lint",
-            version: "0.5.0",
+            version,
             informationUri: "https://github.com/Rika-Labs/repo-lint",
             rules: [...new Set(result.violations.map((v) => v.rule))].map((rule) => ({
               id: rule,
@@ -99,8 +101,3 @@ export const format = (result: CheckResult, fmt: OutputFormat): string => {
       return formatConsole(result);
   }
 };
-
-export const formatEffect = (
-  result: CheckResult,
-  fmt: OutputFormat,
-): Effect.Effect<string> => Effect.succeed(format(result, fmt));

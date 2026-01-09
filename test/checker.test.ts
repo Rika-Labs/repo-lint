@@ -1,13 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
-import { check } from "../src/checker.js";
-import type { RepoLintConfig, FileEntry } from "../src/types.js";
+import { check } from "../src/rules/index.js";
+import type { RepoLintConfig, FileEntry } from "../src/types/index.js";
 
 const makeFiles = (paths: readonly string[]): readonly FileEntry[] =>
   paths.map((p) => ({
     path: `/test/${p}`,
     relativePath: p,
     isDirectory: !p.includes("."),
+    isSymlink: false,
     depth: p.split("/").length,
   }));
 
@@ -114,9 +115,112 @@ describe("layout", () => {
         "components/Button/index.tsx",
         "components/bad-name",
         "components/bad-name/index.tsx",
-      ])
+      ]),
     );
 
+    expect(result.violations.length).toBe(1);
+    expect(result.violations[0]?.rule).toBe("naming");
+  });
+
+  test("validates file pattern mismatch", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      layout: {
+        type: "dir",
+        children: {
+          "config.js": { pattern: "*.ts" },
+        },
+      },
+    };
+
+    const result = await runCheck(config, makeFiles(["config.js"]));
+    expect(result.violations.length).toBe(1);
+    expect(result.violations[0]?.rule).toBe("layout");
+  });
+
+  test("validates many node min/max constraints", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      layout: {
+        type: "dir",
+        children: {
+          src: {
+            type: "dir",
+            children: { $files: { type: "many", pattern: "*.ts", min: 2, max: 2 } },
+          },
+        },
+      },
+    };
+
+    const result = await runCheck(config, makeFiles(["src", "src/only.ts"]));
+    expect(result.violations.length).toBe(1);
+    expect(result.violations[0]?.rule).toBe("layout");
+  });
+
+  test("validates either node when no variant matches", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      layout: {
+        type: "dir",
+        children: {
+          src: {
+            type: "either",
+            variants: [
+              { type: "file", required: true },
+              { type: "dir", children: { "index.ts": {} } },
+            ],
+          },
+        },
+      },
+    };
+
+    const result = await runCheck(config, makeFiles([]));
+    expect(result.violations.length).toBe(1);
+    expect(result.violations[0]?.rule).toBe("layout");
+  });
+
+  test("enforces strict directories", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      layout: {
+        type: "dir",
+        children: {
+          src: {
+            type: "dir",
+            strict: true,
+            children: { "index.ts": {} },
+          },
+        },
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles(["src", "src/index.ts", "src/extra.ts"]),
+    );
+    expect(result.violations.length).toBe(1);
+    expect(result.violations[0]?.rule).toBe("layout");
+  });
+
+  test("validates recursive nodes", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      layout: {
+        type: "dir",
+        children: {
+          modules: {
+            type: "recursive",
+            case: "kebab",
+            child: { type: "dir", children: { "index.ts": {} } },
+          },
+        },
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles(["modules", "modules/BadName", "modules/BadName/index.ts"]),
+    );
     expect(result.violations.length).toBe(1);
     expect(result.violations[0]?.rule).toBe("naming");
   });
@@ -141,7 +245,12 @@ describe("dependencies", () => {
 
     const result = await runCheck(
       config,
-      makeFiles(["src/controllers", "src/controllers/user.ts", "src/services", "src/services/user.ts"])
+      makeFiles([
+        "src/controllers",
+        "src/controllers/user.ts",
+        "src/services",
+        "src/services/user.ts",
+      ]),
     );
 
     expect(result.violations.filter((v) => v.rule === "dependencies").length).toBe(0);

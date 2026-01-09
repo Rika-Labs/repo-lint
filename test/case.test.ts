@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Effect } from "effect";
-import { validateCase, validateCaseEffect, suggestCase, getCaseName } from "../src/case.js";
+import { validateCase, suggestCase, getCaseName } from "../src/core/case.js";
 
 describe("validateCase", () => {
   test("validates kebab-case", () => {
@@ -36,13 +35,6 @@ describe("validateCase", () => {
   test("handles multiple extensions", () => {
     expect(validateCase("my-component.test.ts", "kebab")).toBe(true);
     expect(validateCase("MyComponent.test.tsx", "pascal")).toBe(true);
-  });
-});
-
-describe("validateCaseEffect", () => {
-  test("returns Effect with validation result", async () => {
-    const result = await Effect.runPromise(validateCaseEffect("my-component", "kebab"));
-    expect(result).toBe(true);
   });
 });
 

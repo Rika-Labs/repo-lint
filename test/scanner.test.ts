@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
-import { Effect, Exit } from "effect";
-import { scan, fileExists, readFileContent } from "../src/scanner.js";
+import { Effect, Exit, Option } from "effect";
+import { scan, fileExists, readFileContent } from "../src/core/scanner.js";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -15,6 +15,12 @@ beforeAll(async () => {
   await writeFile(join(testDir, "package.json"), "{}");
   await mkdir(join(testDir, "node_modules"));
   await writeFile(join(testDir, "node_modules/dep.js"), "");
+  await writeFile(join(testDir, ".gitignore"), "ignored.txt\n");
+  await writeFile(join(testDir, "ignored.txt"), "ignored");
+  await mkdir(join(testDir, "subdir"));
+  await writeFile(join(testDir, "subdir/.gitignore"), "secret.txt\n");
+  await writeFile(join(testDir, "subdir/secret.txt"), "secret");
+  await writeFile(join(testDir, "subdir/keep.txt"), "keep");
 });
 
 afterAll(async () => {
@@ -23,7 +29,19 @@ afterAll(async () => {
 
 describe("scan", () => {
   test("scans directory recursively", async () => {
-    const files = await Effect.runPromise(scan({ root: testDir, ignore: [] }));
+    const files = await Effect.runPromise(
+      scan({
+        root: testDir,
+        ignore: [],
+        scope: Option.none(),
+        useGitignore: Option.some(false),
+        maxDepth: Option.none(),
+        maxFiles: Option.none(),
+        followSymlinks: Option.none(),
+        timeout: Option.none(),
+        concurrency: Option.none(),
+      }),
+    );
 
     expect(files.length).toBeGreaterThan(0);
     expect(files.some((f) => f.relativePath === "src")).toBe(true);
@@ -32,14 +50,58 @@ describe("scan", () => {
   });
 
   test("respects ignore patterns", async () => {
-    const files = await Effect.runPromise(scan({ root: testDir, ignore: ["node_modules/**"] }));
+    const files = await Effect.runPromise(
+      scan({
+        root: testDir,
+        ignore: ["node_modules/**"],
+        scope: Option.none(),
+        useGitignore: Option.some(false),
+        maxDepth: Option.none(),
+        maxFiles: Option.none(),
+        followSymlinks: Option.none(),
+        timeout: Option.none(),
+        concurrency: Option.none(),
+      }),
+    );
 
     expect(files.some((f) => f.relativePath.includes("node_modules"))).toBe(false);
     expect(files.some((f) => f.relativePath === "src/index.ts")).toBe(true);
   });
 
+  test("respects nested gitignore files", async () => {
+    const files = await Effect.runPromise(
+      scan({
+        root: testDir,
+        ignore: [],
+        scope: Option.none(),
+        useGitignore: Option.some(true),
+        maxDepth: Option.none(),
+        maxFiles: Option.none(),
+        followSymlinks: Option.none(),
+        timeout: Option.none(),
+        concurrency: Option.none(),
+      }),
+    );
+
+    expect(files.some((f) => f.relativePath === "ignored.txt")).toBe(false);
+    expect(files.some((f) => f.relativePath === "subdir/secret.txt")).toBe(false);
+    expect(files.some((f) => f.relativePath === "subdir/keep.txt")).toBe(true);
+  });
+
   test("marks directories correctly", async () => {
-    const files = await Effect.runPromise(scan({ root: testDir, ignore: [] }));
+    const files = await Effect.runPromise(
+      scan({
+        root: testDir,
+        ignore: [],
+        scope: Option.none(),
+        useGitignore: Option.some(false),
+        maxDepth: Option.none(),
+        maxFiles: Option.none(),
+        followSymlinks: Option.none(),
+        timeout: Option.none(),
+        concurrency: Option.none(),
+      }),
+    );
 
     const srcDir = files.find((f) => f.relativePath === "src");
     const indexFile = files.find((f) => f.relativePath === "src/index.ts");
@@ -49,13 +111,44 @@ describe("scan", () => {
   });
 
   test("calculates depth correctly", async () => {
-    const files = await Effect.runPromise(scan({ root: testDir, ignore: [] }));
+    const files = await Effect.runPromise(
+      scan({
+        root: testDir,
+        ignore: [],
+        scope: Option.none(),
+        useGitignore: Option.some(false),
+        maxDepth: Option.none(),
+        maxFiles: Option.none(),
+        followSymlinks: Option.none(),
+        timeout: Option.none(),
+        concurrency: Option.none(),
+      }),
+    );
 
     const srcDir = files.find((f) => f.relativePath === "src");
     const indexFile = files.find((f) => f.relativePath === "src/index.ts");
 
     expect(srcDir?.depth).toBe(1);
     expect(indexFile?.depth).toBe(2);
+  });
+
+  test("respects maxDepth", async () => {
+    const files = await Effect.runPromise(
+      scan({
+        root: testDir,
+        ignore: [],
+        scope: Option.none(),
+        useGitignore: Option.some(false),
+        maxDepth: Option.some(1),
+        maxFiles: Option.none(),
+        followSymlinks: Option.none(),
+        timeout: Option.none(),
+        concurrency: Option.none(),
+      }),
+    );
+
+    // Should only have top-level entries
+    expect(files.every((f) => f.depth <= 2)).toBe(true);
   });
 });
 

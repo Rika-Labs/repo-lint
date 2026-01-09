@@ -7,7 +7,7 @@ Extremely fast repository architecture linter with YAML configuration.
 
 ## Tech Stack
 - **Runtime**: Bun
-- **Core**: Effect TS, @effect/cli
+- **Core**: Effect TS, @effect/schema
 - **Linting**: Oxlint
 - **Git Hooks**: Husky + lint-staged
 
@@ -22,20 +22,17 @@ Extremely fast repository architecture linter with YAML configuration.
 
 ```bash
 # Lint current directory
-repo-lint
+repo-lint check
 
 # With options
-repo-lint --config .repo-lint.yaml --format text --pretty
+repo-lint check --config .repo-lint.yaml --json
+repo-lint check --sarif  # GitHub Code Scanning format
+repo-lint check --no-cache
+repo-lint check --max-depth 3 --timeout-ms 10000 --no-gitignore
 
-# Initialize config
-repo-lint init --preset typescript
-
-# Config management
-repo-lint config show
-repo-lint config validate
-
-# Explain rules
-repo-lint explain naming
+# Inspect config
+repo-lint inspect layout
+repo-lint inspect rule <rule-name>
 ```
 
 ## Code Standards
@@ -43,16 +40,18 @@ repo-lint explain naming
 ### Effect TS Patterns
 - Use `Effect.gen` for generator-based workflows
 - Use `Effect.tryPromise` for external async calls with typed errors
-- Use `Effect.forEach` with `{ concurrency }` for bounded parallel operations
-- Errors should extend `Error` with `_tag` discriminator
+- Use `Effect.forEach` with `{ concurrency: N }` for bounded parallel operations (N = 10 default)
+- Errors should extend `Data.TaggedError` with `_tag` discriminator
 - Prefer `Effect.orElseSucceed`, `Effect.catchAll` for error recovery
 - Use `Option` for optional values, never `undefined | T`
+- Use `Ref` for mutable state in Effect context
 
 ### TypeScript
 - Strict mode enabled
 - `noUncheckedIndexedAccess: true`
 - All tests must be type-safe (no `any`)
 - Use discriminated unions for error types
+- Use @effect/schema for runtime validation
 
 ### Testing
 - All mocks must be properly typed
@@ -70,17 +69,35 @@ repo-lint explain naming
 ## File Structure
 ```
 src/
-  cli/          # @effect/cli command definitions
-  commands/     # Command handlers
-  config/       # Configuration loading & validation
-  core/         # Scanner, matcher, parser
-  rules/        # Rule implementations
-  output/       # Formatters (text, json, github)
-  cache/        # File caching system
-  types/        # Type definitions
-  errors.ts     # Error types
-  index.ts      # Entry point
-test/           # Tests mirror src structure
+  cli/              # CLI entry point and argument parser
+    index.ts        # Main CLI entry
+    parser.ts       # Argument parsing with Option types
+  commands/         # Command handlers
+    check.ts        # Check command implementation
+    inspect.ts      # Inspect command implementation
+  config/           # Configuration loading & validation
+    loader.ts       # Config loading with circular extends detection
+    presets/        # Built-in presets (nextjs, etc.)
+  core/             # Core utilities
+    case.ts         # Case style validation (kebab, snake, camel, pascal)
+    matcher.ts      # Glob pattern matching with picomatch
+    scanner.ts      # File system scanning with symlink/depth protection
+  rules/            # Rule implementations
+    context.ts      # Shared context for rule checking
+    layout.ts       # Layout tree validation
+    forbid-paths.ts # Forbidden path patterns
+    forbid-names.ts # Forbidden file names
+    dependencies.ts # File dependency validation
+    mirror.ts       # Mirror structure validation
+    when.ts         # Conditional requirements
+  output/           # Output formatters
+    formatters.ts   # Console, JSON, SARIF formats
+  cache/            # File caching system
+  types/            # Type definitions with @effect/schema
+  errors.ts         # Tagged error types
+  version.ts        # Version from package.json
+  index.ts          # Public API exports
+test/               # Tests (flat structure, *.test.ts)
 ```
 
 ## Commit Convention
@@ -98,45 +115,84 @@ chore: ...    # No release
 
 ## Rules
 
-### naming
-Validates file naming conventions (kebab-case, PascalCase, etc.)
+### layout
+Validates file system structure against a tree definition with node types:
+- `file` - Single file
+- `dir` - Directory with children
+- `param` - Dynamic named entries (like Next.js routes)
+- `many` - Multiple files matching pattern
+- `recursive` - Recursive directory structure
+- `either` - One of multiple variants
 
-### structure
-Validates directory structure, required paths, allowed children
+### forbidPaths
+Forbids files matching glob patterns
 
-### imports
-Validates import statements and forbidden dependencies
+### forbidNames
+Forbids specific file names
 
-### boundaries
-Enforces architectural layer boundaries
+### dependencies
+Requires certain files to exist when others exist
 
-### custom
-User-defined regex-based rules
+### mirror
+Requires mirrored file structure (e.g., src/*.ts → test/*.test.ts)
 
-### limits
-Enforces file size limits (lines/bytes)
+### when
+Conditional requirements (if X exists, Y must exist)
 
 ## Configuration
 
-Config file: `.repo-lint.yaml`
+Config file: `.repo-lint.yaml` or `repo-lint.config.yaml`
 
 ```yaml
-version: 1
-settings:
-  root: "."
-  ignore: ["node_modules/**"]
-naming:
-  rules:
-    - pattern: "src/**/*.ts"
-      style: kebab-case
-structure:
-  required:
-    - path: "src"
-boundaries:
-  layers:
-    - name: core
-      pattern: "src/core/**"
-  rules:
-    - from: core
-      allow: [utils]
+mode: strict  # or "warn"
+
+ignore:
+  - "node_modules/**"
+  - "dist/**"
+
+useGitignore: true
+
+layout:
+  type: dir
+  children:
+    src:
+      type: dir
+      required: true
+      children:
+        "index.ts": {}
+        $files:
+          type: many
+          pattern: "*.ts"
+          case: kebab
+
+scan:
+  maxDepth: 100
+  maxFiles: 100000
+  followSymlinks: false
+  timeoutMs: 30000
+  concurrency: 10
+
+rules:
+  forbidPaths:
+    - "**/temp/**"
+  forbidNames:
+    - ".DS_Store"
+  mirror:
+    - source: "src/**/*.ts"
+      target: "test/**/*.test.ts"
 ```
+
+## Error Types
+
+All errors extend `Data.TaggedError` for Effect TS compatibility:
+
+- `ConfigNotFoundError` - No config file found
+- `ConfigParseError` - YAML parsing failed
+- `ConfigValidationError` - Schema validation failed
+- `CircularExtendsError` - Circular extends chain detected
+- `PathTraversalError` - Path escape attempt in extends
+- `FileSystemError` - FS operation failed
+- `ScanError` - Directory scanning failed
+- `SymlinkLoopError` - Symlink loop detected
+- `MaxDepthExceededError` - Directory too deep
+- `MaxFilesExceededError` - Too many files

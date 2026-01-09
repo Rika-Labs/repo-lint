@@ -1,98 +1,152 @@
 # repo-lint dogfooding configuration
-version: 1
+mode: strict
 
-settings:
-  root: "."
-  ignore:
-    - "node_modules/**"
-    - "dist/**"
-    - ".git/**"
-    - ".husky/_/**"
-    - "test/fixtures/**"
-    - "*.d.ts"
+ignore:
+  - "node_modules/**"
+  - "dist/**"
+  - ".git/**"
+  - ".husky/_/**"
+  - "test/fixtures/**"
+  - "*.d.ts"
+  - "bun.lock"
 
-naming:
-  rules:
-    - pattern: "src/**/*.ts"
-      style: kebab-case
-      message: "Source files must use kebab-case"
-    - pattern: "test/**/*.ts"
-      style: kebab-case
-      message: "Test files must use kebab-case"
+useGitignore: true
 
-structure:
-  required:
-    - path: "src"
-      message: "Source directory is required"
-    - path: "test"
-      message: "Test directory is required"
-  enforce:
-    - path: "src"
-      allowed-children:
-        - "cli"
-        - "commands"
-        - "config"
-        - "core"
-        - "rules"
-        - "output"
-        - "cache"
-        - "types"
-        - "errors.ts"
-        - "index.ts"
-      message: "Unexpected directory in src/"
+layout:
+  type: dir
+  children:
+    src:
+      type: dir
+      required: true
+      children:
+        cli:
+          type: dir
+          children:
+            $files:
+              type: many
+              pattern: "*.ts"
+        commands:
+          type: dir
+          children:
+            $files:
+              type: many
+              pattern: "*.ts"
+        config:
+          type: dir
+          children:
+            $files:
+              type: many
+              pattern: "*.ts"
+            presets:
+              type: dir
+              optional: true
+              children:
+                $files:
+                  type: many
+                  pattern: "*.ts"
+        core:
+          type: dir
+          children:
+            $files:
+              type: many
+              pattern: "*.ts"
+        rules:
+          type: dir
+          children:
+            $files:
+              type: many
+              pattern: "*.ts"
+        output:
+          type: dir
+          children:
+            $files:
+              type: many
+              pattern: "*.ts"
+        cache:
+          type: dir
+          children:
+            $files:
+              type: many
+              pattern: "*.ts"
+        types:
+          type: dir
+          children:
+            $files:
+              type: many
+              pattern: "*.ts"
+            $dts:
+              type: many
+              pattern: "*.d.ts"
+              optional: true
+        "errors.ts": {}
+        "index.ts": {}
+        "version.ts": {}
+    test:
+      type: dir
+      required: true
+      children:
+        $files:
+          type: many
+          pattern: "*.ts"
+        fixtures:
+          type: dir
+          optional: true
+        presets:
+          type: dir
+          optional: true
+          children:
+            $files:
+              type: many
+              pattern: "*.ts"
+    ".husky":
+      type: dir
+      optional: true
+      children:
+        "pre-commit":
+          optional: true
+        "commit-msg":
+          optional: true
+    "package.json":
+      required: true
+    "tsconfig.json":
+      optional: true
+    "oxlint.json":
+      optional: true
+    ".repo-lint.yaml":
+      optional: true
+    "README.md":
+      optional: true
+    "LICENSE":
+      optional: true
+    "CLAUDE.md":
+      optional: true
+    "knip.json":
+      optional: true
+    "commitlint.config.js":
+      optional: true
+    ".gitignore":
+      optional: true
+    "bunfig.toml":
+      optional: true
+    "CONTRIBUTING.md":
+      optional: true
+    "PLAN.md":
+      optional: true
+    ".github":
+      type: dir
+      optional: true
+      children:
+        workflows:
+          type: dir
+          optional: true
+          children:
+            $files:
+              type: many
+              pattern: "*.yml"
 
-boundaries:
-  layers:
-    - name: cli
-      pattern: "src/cli/**"
-    - name: commands
-      pattern: "src/commands/**"
-    - name: core
-      pattern: "src/core/**"
-    - name: rules
-      pattern: "src/rules/**"
-    - name: output
-      pattern: "src/output/**"
-    - name: cache
-      pattern: "src/cache/**"
-    - name: config
-      pattern: "src/config/**"
-    - name: types
-      pattern: "src/types/**"
-  rules:
-    - from: types
-      allow: []
-      message: "Types should not import from other layers"
-    - from: core
-      allow: [types]
-      message: "Core can only import from types"
-    - from: cache
-      allow: [types, core]
-      message: "Cache can only import from types and core"
-    - from: config
-      allow: [types, core]
-      message: "Config can only import from types and core"
-    - from: output
-      allow: [types]
-      message: "Output can only import from types"
-    - from: rules
-      allow: [types, core, config]
-      message: "Rules can import from types, core, and config"
-    - from: commands
-      allow: [types, core, config, rules, output, cache]
-      message: "Commands can import from most layers"
-    - from: cli
-      allow: [types, commands]
-      message: "CLI should only import from types and commands"
-
-custom:
-  - name: no-any
-    pattern: "src/**/*.ts"
-    match: ":\\s*any\\b"
-    severity: warn
-    message: "Avoid explicit 'any' type"
-
-limits:
-  - pattern: "src/**/*.ts"
-    max-lines: 400
-    message: "Files should be under 400 lines"
+rules:
+  forbidPaths:
+    - "**/node_modules/**"
+  forbidNames:
+    - ".DS_Store"
+    - "Thumbs.db"

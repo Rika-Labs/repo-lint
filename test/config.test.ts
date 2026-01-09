@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
 import { Effect, Option, Exit } from "effect";
-import { findConfig, loadConfig, loadConfigFromRoot } from "../src/config.js";
+import { findConfig, loadConfig, loadConfigFromRoot } from "../src/config/loader.js";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -60,7 +60,7 @@ ignore:
 rules:
   forbidNames:
     - temp
-`
+`,
     );
 
     const config = await Effect.runPromise(loadConfig(configPath));
@@ -76,6 +76,76 @@ rules:
     await writeFile(configPath, "invalid: yaml: content:");
 
     const exit = await Effect.runPromiseExit(loadConfig(configPath));
+    expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  test("fails on empty config", async () => {
+    const configDir = join(testDir, "empty-config");
+    await mkdir(configDir, { recursive: true });
+    const configPath = join(configDir, "repo-lint.config.yaml");
+    await writeFile(configPath, "");
+
+    const exit = await Effect.runPromiseExit(loadConfig(configPath));
+    expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  test("fails on whitespace-only config", async () => {
+    const configDir = join(testDir, "whitespace-config");
+    await mkdir(configDir, { recursive: true });
+    const configPath = join(configDir, "repo-lint.config.yaml");
+    await writeFile(configPath, "\n   \n");
+
+    const exit = await Effect.runPromiseExit(loadConfig(configPath));
+    expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  test("fails on unknown top-level keys", async () => {
+    const configDir = join(testDir, "unknown-top");
+    await mkdir(configDir, { recursive: true });
+    const configPath = join(configDir, "repo-lint.config.yaml");
+    await writeFile(configPath, "mode: strict\nunknownKey: 123\n");
+
+    const exit = await Effect.runPromiseExit(loadConfig(configPath));
+    expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  test("fails on unknown rules keys", async () => {
+    const configDir = join(testDir, "unknown-rules");
+    await mkdir(configDir, { recursive: true });
+    const configPath = join(configDir, "repo-lint.config.yaml");
+    await writeFile(configPath, "mode: strict\nrules:\n  badRule: true\n");
+
+    const exit = await Effect.runPromiseExit(loadConfig(configPath));
+    expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  test("fails on unknown scan keys", async () => {
+    const configDir = join(testDir, "unknown-scan");
+    await mkdir(configDir, { recursive: true });
+    const configPath = join(configDir, "repo-lint.config.yaml");
+    await writeFile(configPath, "mode: strict\nscan:\n  badKey: 1\n");
+
+    const exit = await Effect.runPromiseExit(loadConfig(configPath));
+    expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  test("fails on invalid layout keys", async () => {
+    const configDir = join(testDir, "invalid-layout");
+    await mkdir(configDir, { recursive: true });
+    const configPath = join(configDir, "repo-lint.config.yaml");
+    await writeFile(configPath, "layout:\n  type: dir\n  badKey: 1\n");
+
+    const exit = await Effect.runPromiseExit(loadConfig(configPath));
+    expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  test("detects circular extends", async () => {
+    const configDir = join(testDir, "circular");
+    await mkdir(configDir, { recursive: true });
+    await writeFile(join(configDir, "a.yaml"), "extends: ./b.yaml\nmode: strict\n");
+    await writeFile(join(configDir, "b.yaml"), "extends: ./a.yaml\nmode: warn\n");
+
+    const exit = await Effect.runPromiseExit(loadConfig(join(configDir, "a.yaml")));
     expect(Exit.isFailure(exit)).toBe(true);
   });
 });

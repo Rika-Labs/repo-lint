@@ -9,7 +9,8 @@ import {
   getParent,
   getDepth,
   joinPath,
-} from "../src/matcher.js";
+  normalizeUnicode,
+} from "../src/core/matcher.js";
 
 describe("matches", () => {
   test("simple glob", async () => {
@@ -18,7 +19,7 @@ describe("matches", () => {
         matchesEffect("src/index.ts", "src/*.ts"),
         matchesEffect("src/utils/helper.ts", "src/**/*.ts"),
         matchesEffect("other/file.ts", "src/**/*.ts"),
-      ])
+      ]),
     );
     expect(result).toEqual([true, true, false]);
   });
@@ -28,7 +29,7 @@ describe("matches", () => {
       Effect.all([
         matchesEffect("a/b/c/d.ts", "**/*.ts"),
         matchesEffect("d.ts", "**/*.ts"),
-      ])
+      ]),
     );
     expect(result).toEqual([true, true]);
   });
@@ -41,7 +42,7 @@ describe("matchesAny", () => {
         matchesAnyEffect("src/index.ts", ["**/*.ts", "**/*.js"]),
         matchesAnyEffect("src/index.ts", ["src/*.ts"]),
         matchesAnyEffect("other/file.txt", ["**/*.ts", "**/*.js"]),
-      ])
+      ]),
     );
     expect(result).toEqual([true, true, false]);
   });
@@ -87,5 +88,16 @@ describe("path utilities", () => {
   test("joinPath", () => {
     expect(joinPath("src", "utils")).toBe("src/utils");
     expect(joinPath("", "file.ts")).toBe("file.ts");
+  });
+});
+
+describe("normalizeUnicode", () => {
+  test("normalizes unicode strings", () => {
+    // café in composed form
+    const composed = "caf\u00e9";
+    // café in decomposed form
+    const decomposed = "cafe\u0301";
+
+    expect(normalizeUnicode(composed)).toBe(normalizeUnicode(decomposed));
   });
 });

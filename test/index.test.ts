@@ -3,19 +3,13 @@ import { Effect } from "effect";
 import * as RepoLint from "../src/index.js";
 
 describe("index exports", () => {
-  test("exports type utilities", async () => {
-    const program = Effect.gen(function* () {
-      expect(RepoLint.validateCase).toBeDefined();
-      expect(RepoLint.suggestCase).toBeDefined();
-      expect(RepoLint.getCaseName).toBeDefined();
-      expect(RepoLint.validateCaseEffect).toBeDefined();
+  test("exports type utilities", () => {
+    expect(RepoLint.validateCase).toBeDefined();
+    expect(RepoLint.suggestCase).toBeDefined();
+    expect(RepoLint.getCaseName).toBeDefined();
 
-      const isValid = yield* RepoLint.validateCaseEffect("my-component", "kebab");
-      return isValid;
-    });
-
-    const result = await Effect.runPromise(program);
-    expect(result).toBe(true);
+    const isValid = RepoLint.validateCase("my-component", "kebab");
+    expect(isValid).toBe(true);
   });
 
   test("exports matcher utilities", async () => {
@@ -57,19 +51,18 @@ describe("index exports", () => {
     expect(result.summary.filesChecked).toBe(0);
   });
 
-  test("exports formatters", async () => {
+  test("exports formatters", () => {
     expect(RepoLint.format).toBeDefined();
     expect(RepoLint.formatConsole).toBeDefined();
     expect(RepoLint.formatJson).toBeDefined();
     expect(RepoLint.formatSarif).toBeDefined();
-    expect(RepoLint.formatEffect).toBeDefined();
 
     const checkResult: RepoLint.CheckResult = {
       violations: [],
       summary: { total: 0, errors: 0, warnings: 0, filesChecked: 0, duration: 0 },
     };
 
-    const output = await Effect.runPromise(RepoLint.formatEffect(checkResult, "json"));
+    const output = RepoLint.format(checkResult, "json");
     const parsed = JSON.parse(output) as RepoLint.CheckResult;
     expect(parsed.violations).toEqual([]);
   });
@@ -80,6 +73,11 @@ describe("index exports", () => {
     expect(RepoLint.ConfigValidationError).toBeDefined();
     expect(RepoLint.FileSystemError).toBeDefined();
     expect(RepoLint.ScanError).toBeDefined();
+    expect(RepoLint.CircularExtendsError).toBeDefined();
+    expect(RepoLint.PathTraversalError).toBeDefined();
+    expect(RepoLint.SymlinkLoopError).toBeDefined();
+    expect(RepoLint.MaxDepthExceededError).toBeDefined();
+    expect(RepoLint.MaxFilesExceededError).toBeDefined();
   });
 
   test("exports presets", () => {
@@ -87,5 +85,11 @@ describe("index exports", () => {
 
     const preset = RepoLint.nextjsPreset();
     expect(preset.mode).toBe("strict");
+  });
+
+  test("exports version", () => {
+    expect(RepoLint.getVersion).toBeDefined();
+    const version = RepoLint.getVersion();
+    expect(version).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });

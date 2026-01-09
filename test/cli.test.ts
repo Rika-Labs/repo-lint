@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 describe("cli", () => {
   test("--help flag shows help", async () => {
-    const proc = Bun.spawn(["bun", "run", "src/cli.ts", "--help"], {
+    const proc = Bun.spawn(["bun", "run", "src/cli/index.ts", "--help"], {
       cwd: `${import.meta.dir}/..`,
       stdout: "pipe",
     });
@@ -14,7 +14,7 @@ describe("cli", () => {
   });
 
   test("--version flag shows version", async () => {
-    const proc = Bun.spawn(["bun", "run", "src/cli.ts", "--version"], {
+    const proc = Bun.spawn(["bun", "run", "src/cli/index.ts", "--version"], {
       cwd: `${import.meta.dir}/..`,
       stdout: "pipe",
     });
@@ -23,8 +23,8 @@ describe("cli", () => {
     expect(output.trim()).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  test("check command runs successfully", async () => {
-    const proc = Bun.spawn(["bun", "run", "src/cli.ts", "check"], {
+  test("check command runs", async () => {
+    const proc = Bun.spawn(["bun", "run", "src/cli/index.ts", "check"], {
       cwd: `${import.meta.dir}/..`,
       stdout: "pipe",
       stderr: "pipe",
@@ -38,7 +38,7 @@ describe("cli", () => {
   });
 
   test("inspect layout shows layout", async () => {
-    const proc = Bun.spawn(["bun", "run", "src/cli.ts", "inspect", "layout"], {
+    const proc = Bun.spawn(["bun", "run", "src/cli/index.ts", "inspect", "layout"], {
       cwd: `${import.meta.dir}/..`,
       stdout: "pipe",
     });
@@ -48,7 +48,7 @@ describe("cli", () => {
   });
 
   test("--json outputs JSON format", async () => {
-    const proc = Bun.spawn(["bun", "run", "src/cli.ts", "check", "--json"], {
+    const proc = Bun.spawn(["bun", "run", "src/cli/index.ts", "check", "--json"], {
       cwd: `${import.meta.dir}/..`,
       stdout: "pipe",
       stderr: "pipe",

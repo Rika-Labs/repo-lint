@@ -1,9 +1,9 @@
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
-import { Effect } from "effect";
-import { check } from "../src/checker.js";
-import { scan } from "../src/scanner.js";
-import { loadConfig } from "../src/config.js";
-import type { RepoLintConfig } from "../src/types.js";
+import { Effect, Option } from "effect";
+import { check } from "../src/rules/index.js";
+import { scan } from "../src/core/scanner.js";
+import { loadConfig } from "../src/config/loader.js";
+import type { RepoLintConfig } from "../src/types/index.js";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -304,7 +304,7 @@ afterAll(async () => {
 
 describe("monorepo structure validation", () => {
   test("valid monorepo passes all checks", async () => {
-    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"] }));
+    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"], scope: Option.none(), useGitignore: Option.some(false), maxDepth: Option.none(), maxFiles: Option.none(), followSymlinks: Option.none(), timeout: Option.none(), concurrency: Option.none() }));
     const result = await Effect.runPromise(check(strictMonorepoConfig, files));
 
     const structureViolations = result.violations.filter(
@@ -320,7 +320,7 @@ describe("monorepo structure validation", () => {
     await createFile(join(badPackageDir, "tsconfig.json"), "{}");
     await createFile(join(badPackageDir, "src/index.ts"), "export {}");
 
-    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"] }));
+    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"], scope: Option.none(), useGitignore: Option.some(false), maxDepth: Option.none(), maxFiles: Option.none(), followSymlinks: Option.none(), timeout: Option.none(), concurrency: Option.none() }));
     const result = await Effect.runPromise(check(strictMonorepoConfig, files));
 
     const namingViolations = result.violations.filter(
@@ -337,7 +337,7 @@ describe("monorepo structure validation", () => {
     const badComponentDir = join(monorepoRoot, "apps/dashboard/src/components/bad-button");
     await createFile(join(badComponentDir, "index.tsx"), "export {}");
 
-    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"] }));
+    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"], scope: Option.none(), useGitignore: Option.some(false), maxDepth: Option.none(), maxFiles: Option.none(), followSymlinks: Option.none(), timeout: Option.none(), concurrency: Option.none() }));
     const result = await Effect.runPromise(check(strictMonorepoConfig, files));
 
     const namingViolations = result.violations.filter(
@@ -354,7 +354,7 @@ describe("monorepo structure validation", () => {
     const tempFile = join(monorepoRoot, "packages/api/src/temp.ts");
     await createFile(tempFile, "export {}");
 
-    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"] }));
+    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"], scope: Option.none(), useGitignore: Option.some(false), maxDepth: Option.none(), maxFiles: Option.none(), followSymlinks: Option.none(), timeout: Option.none(), concurrency: Option.none() }));
     const result = await Effect.runPromise(check(strictMonorepoConfig, files));
 
     const forbidViolations = result.violations.filter(
@@ -371,7 +371,7 @@ describe("monorepo structure validation", () => {
     await mkdir(join(incompletePackage, "src"), { recursive: true });
     await createFile(join(incompletePackage, "package.json"), "{}");
 
-    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"] }));
+    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"], scope: Option.none(), useGitignore: Option.some(false), maxDepth: Option.none(), maxFiles: Option.none(), followSymlinks: Option.none(), timeout: Option.none(), concurrency: Option.none() }));
     const result = await Effect.runPromise(check(strictMonorepoConfig, files));
 
     const layoutViolations = result.violations.filter(
@@ -387,7 +387,7 @@ describe("monorepo structure validation", () => {
     const unexpectedFile = join(monorepoRoot, "random-file.ts");
     await createFile(unexpectedFile, "export {}");
 
-    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"] }));
+    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"], scope: Option.none(), useGitignore: Option.some(false), maxDepth: Option.none(), maxFiles: Option.none(), followSymlinks: Option.none(), timeout: Option.none(), concurrency: Option.none() }));
     const result = await Effect.runPromise(check(strictMonorepoConfig, files));
 
     const layoutViolations = result.violations.filter(
@@ -406,7 +406,7 @@ describe("monorepo hooks validation", () => {
     const badHook = join(monorepoRoot, "apps/dashboard/src/hooks/getAuth.ts");
     await createFile(badHook, "export {}");
 
-    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"] }));
+    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"], scope: Option.none(), useGitignore: Option.some(false), maxDepth: Option.none(), maxFiles: Option.none(), followSymlinks: Option.none(), timeout: Option.none(), concurrency: Option.none() }));
     const result = await Effect.runPromise(check(strictMonorepoConfig, files));
 
     const hookViolations = result.violations.filter(
@@ -422,7 +422,7 @@ describe("monorepo hooks validation", () => {
     const goodHook = join(monorepoRoot, "apps/dashboard/src/hooks/useData.ts");
     await createFile(goodHook, "export {}");
 
-    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"] }));
+    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"], scope: Option.none(), useGitignore: Option.some(false), maxDepth: Option.none(), maxFiles: Option.none(), followSymlinks: Option.none(), timeout: Option.none(), concurrency: Option.none() }));
     const result = await Effect.runPromise(check(strictMonorepoConfig, files));
 
     const hookViolations = result.violations.filter(
@@ -440,7 +440,7 @@ describe("monorepo app routes validation", () => {
     const nestedRoute = join(monorepoRoot, "apps/dashboard/src/app/users/profile/page.tsx");
     await createFile(nestedRoute, "export default () => null");
 
-    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"] }));
+    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"], scope: Option.none(), useGitignore: Option.some(false), maxDepth: Option.none(), maxFiles: Option.none(), followSymlinks: Option.none(), timeout: Option.none(), concurrency: Option.none() }));
     const result = await Effect.runPromise(check(strictMonorepoConfig, files));
 
     const routeViolations = result.violations.filter(
@@ -456,7 +456,7 @@ describe("monorepo app routes validation", () => {
     const badRoute = join(monorepoRoot, "apps/dashboard/src/app/UserSettings/page.tsx");
     await createFile(badRoute, "export default () => null");
 
-    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"] }));
+    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"], scope: Option.none(), useGitignore: Option.some(false), maxDepth: Option.none(), maxFiles: Option.none(), followSymlinks: Option.none(), timeout: Option.none(), concurrency: Option.none() }));
     const result = await Effect.runPromise(check(strictMonorepoConfig, files));
 
     const routeViolations = result.violations.filter(
@@ -475,7 +475,7 @@ describe("monorepo mirror rules", () => {
     const sourceFile = join(monorepoRoot, "packages/api/src/validation.ts");
     await createFile(sourceFile, "export {}");
 
-    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"] }));
+    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"], scope: Option.none(), useGitignore: Option.some(false), maxDepth: Option.none(), maxFiles: Option.none(), followSymlinks: Option.none(), timeout: Option.none(), concurrency: Option.none() }));
     const result = await Effect.runPromise(check(strictMonorepoConfig, files));
 
     const mirrorViolations = result.violations.filter(
@@ -494,7 +494,7 @@ describe("monorepo mirror rules", () => {
     await createFile(sourceFile, "export {}");
     await createFile(testFile, "test('', () => {})");
 
-    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"] }));
+    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"], scope: Option.none(), useGitignore: Option.some(false), maxDepth: Option.none(), maxFiles: Option.none(), followSymlinks: Option.none(), timeout: Option.none(), concurrency: Option.none() }));
     const result = await Effect.runPromise(check(strictMonorepoConfig, files));
 
     const mirrorViolations = result.violations.filter(
@@ -513,7 +513,7 @@ describe("monorepo lib file naming", () => {
     const badFile = join(monorepoRoot, "apps/dashboard/src/lib/apiClient.ts");
     await createFile(badFile, "export {}");
 
-    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"] }));
+    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"], scope: Option.none(), useGitignore: Option.some(false), maxDepth: Option.none(), maxFiles: Option.none(), followSymlinks: Option.none(), timeout: Option.none(), concurrency: Option.none() }));
     const result = await Effect.runPromise(check(strictMonorepoConfig, files));
 
     const namingViolations = result.violations.filter(
@@ -530,7 +530,7 @@ describe("monorepo lib file naming", () => {
     const goodFile = join(monorepoRoot, "apps/dashboard/src/lib/api-client.ts");
     await createFile(goodFile, "export {}");
 
-    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"] }));
+    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"], scope: Option.none(), useGitignore: Option.some(false), maxDepth: Option.none(), maxFiles: Option.none(), followSymlinks: Option.none(), timeout: Option.none(), concurrency: Option.none() }));
     const result = await Effect.runPromise(check(strictMonorepoConfig, files));
 
     const namingViolations = result.violations.filter(
@@ -589,7 +589,7 @@ rules:
 
 describe("monorepo summary statistics", () => {
   test("provides accurate summary for large monorepo", async () => {
-    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"] }));
+    const files = await Effect.runPromise(scan({ root: monorepoRoot, ignore: ["node_modules"], scope: Option.none(), useGitignore: Option.some(false), maxDepth: Option.none(), maxFiles: Option.none(), followSymlinks: Option.none(), timeout: Option.none(), concurrency: Option.none() }));
     const result = await Effect.runPromise(check(strictMonorepoConfig, files));
 
     expect(result.summary.filesChecked).toBeGreaterThan(40);

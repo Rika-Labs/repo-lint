@@ -1,82 +1,65 @@
 import { describe, expect, test } from "bun:test";
-import { Effect } from "effect";
-import { nextjsPreset } from "../../src/presets/nextjs.js";
+import { nextjsPreset } from "../../src/config/presets/nextjs.js";
 
 describe("nextjsPreset", () => {
-  test("returns valid config", async () => {
-    const program = Effect.sync(() => nextjsPreset());
+  test("returns valid config", () => {
+    const config = nextjsPreset();
 
-    const config = await Effect.runPromise(program);
     expect(config.mode).toBe("strict");
     expect(config.layout).toBeDefined();
-    expect(config.ignore).toContain(".next");
-    expect(config.ignore).toContain("node_modules");
+    expect(config.ignore).toBeDefined();
   });
 
-  test("uses kebab case by default", async () => {
-    const program = Effect.sync(() => {
-      const config = nextjsPreset();
-      const srcLayout = config.layout?.children?.["src"];
-      const appLayout = srcLayout?.children?.["app"];
-      const routesLayout = appLayout?.children?.["$routes"];
-      return routesLayout?.case;
-    });
+  test("uses kebab case by default", () => {
+    const config = nextjsPreset();
+    const children = config.layout?.children;
+    const app = children?.["app"];
+    const appChildren = app?.children;
+    const route = appChildren?.["$route"];
 
-    const routeCase = await Effect.runPromise(program);
-    expect(routeCase).toBe("kebab");
+    // Check that route case defaults to kebab
+    expect(route?.case).toBe("kebab");
   });
 
-  test("allows custom route case", async () => {
-    const program = Effect.sync(() => {
-      const config = nextjsPreset({ routeCase: "snake" });
-      const srcLayout = config.layout?.children?.["src"];
-      const appLayout = srcLayout?.children?.["app"];
-      const routesLayout = appLayout?.children?.["$routes"];
-      return routesLayout?.case;
-    });
+  test("allows custom route case", () => {
+    const config = nextjsPreset({ routeCase: "snake" });
+    const children = config.layout?.children;
+    const app = children?.["app"];
+    const appChildren = app?.children;
+    const route = appChildren?.["$route"];
 
-    const routeCase = await Effect.runPromise(program);
-    expect(routeCase).toBe("snake");
+    expect(route?.case).toBe("snake");
   });
 
-  test("includes standard Next.js ignore paths", async () => {
-    const program = Effect.sync(() => nextjsPreset());
+  test("includes standard Next.js ignore paths", () => {
+    const config = nextjsPreset();
 
-    const config = await Effect.runPromise(program);
-    expect(config.rules?.ignorePaths).toContain("**/.next/**");
-    expect(config.rules?.ignorePaths).toContain("**/node_modules/**");
+    expect(config.ignore).toContain("node_modules/**");
+    expect(config.ignore).toContain(".next/**");
   });
 
-  test("defines app directory structure", async () => {
-    const program = Effect.sync(() => {
-      const config = nextjsPreset();
-      const hasSrcApp = config.layout?.children?.["src"]?.children?.["app"] !== undefined;
-      const hasRootApp = config.layout?.children?.["app"] !== undefined;
-      return { hasSrcApp, hasRootApp };
-    });
+  test("defines app directory structure", () => {
+    const config = nextjsPreset();
+    const children = config.layout?.children;
+    const app = children?.["app"];
 
-    const result = await Effect.runPromise(program);
-    expect(result.hasSrcApp).toBe(true);
-    expect(result.hasRootApp).toBe(true);
+    expect(app?.type).toBe("dir");
+    expect(app?.children?.["page.tsx"]).toBeDefined();
+    expect(app?.children?.["layout.tsx"]).toBeDefined();
   });
 
-  test("marks optional directories", async () => {
-    const program = Effect.sync(() => {
-      const config = nextjsPreset();
-      return config.layout?.children?.["src"]?.optional;
-    });
+  test("marks optional directories", () => {
+    const config = nextjsPreset();
+    const children = config.layout?.children;
 
-    const isOptional = await Effect.runPromise(program);
-    expect(isOptional).toBe(true);
+    expect(children?.["components"]?.optional).toBe(true);
+    expect(children?.["lib"]?.optional).toBe(true);
+    expect(children?.["hooks"]?.optional).toBe(true);
   });
 
-  test("requires package.json", async () => {
-    const program = Effect.sync(() => {
-      const config = nextjsPreset();
-      return config.layout?.children?.["package.json"]?.optional;
-    });
+  test("requires package.json", () => {
+    const config = nextjsPreset();
 
-    const isOptional = await Effect.runPromise(program);
-    expect(isOptional).toBeUndefined();
+    expect(config.layout?.children?.["package.json"]?.required).toBe(true);
   });
 });
