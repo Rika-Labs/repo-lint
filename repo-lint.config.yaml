@@ -59,6 +59,19 @@ layout:
               child:
                 type: file
                 pattern: "*.test.ts"
+        fixtures:
+          type: dir
+          optional: true
+          children:
+            "$fixture":
+              type: recursive
+              optional: true
+              child:
+                type: dir
+                children:
+                  "$files":
+                    type: many
+                    optional: true
     .husky:
       type: dir
       optional: true
@@ -114,9 +127,15 @@ rules:
     - "**/backup/**"
     - "**/.backup/**"
 
+  ignorePaths:
+    - "test/fixtures/**"
+
   mirror:
     - source: "src/*.ts"
       target: "test/*.test.ts"
+      pattern: "*.ts -> *.test.ts"
+    - source: "src/presets/*.ts"
+      target: "test/presets/*.test.ts"
       pattern: "*.ts -> *.test.ts"
 
   when:
