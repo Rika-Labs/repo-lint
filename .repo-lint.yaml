@@ -7,6 +7,7 @@ settings:
     - "node_modules/**"
     - "dist/**"
     - ".git/**"
+    - ".husky/_/**"
     - "test/fixtures/**"
     - "*.d.ts"
 
