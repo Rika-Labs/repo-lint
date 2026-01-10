@@ -15,6 +15,9 @@
   "bin": {
     "repo-lint": "dist/index.js"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": ["dist", "README.md", "LICENSE"],
   "scripts": {
     "dev": "bun run src/cli/index.ts",
