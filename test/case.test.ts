@@ -1,7 +1,33 @@
 import { describe, expect, test } from "bun:test";
-import { validateCase, suggestCase, getCaseName } from "../src/core/case.js";
+import { validateCase, suggestCase, getCaseName, isHiddenFile } from "../src/core/case.js";
+
+describe("isHiddenFile", () => {
+  test("detects hidden files", () => {
+    expect(isHiddenFile(".gitignore")).toBe(true);
+    expect(isHiddenFile(".env")).toBe(true);
+    expect(isHiddenFile(".DS_Store")).toBe(true);
+    expect(isHiddenFile(".eslintrc.json")).toBe(true);
+    expect(isHiddenFile("..hidden")).toBe(true);
+  });
+
+  test("detects non-hidden files", () => {
+    expect(isHiddenFile("index.ts")).toBe(false);
+    expect(isHiddenFile("my-file.ts")).toBe(false);
+    expect(isHiddenFile("README.md")).toBe(false);
+  });
+});
 
 describe("validateCase", () => {
+  test("hidden files are exempt from case validation", () => {
+    // All hidden files should pass any case style
+    expect(validateCase(".gitignore", "kebab")).toBe(true);
+    expect(validateCase(".DS_Store", "kebab")).toBe(true);
+    expect(validateCase(".env", "kebab")).toBe(true);
+    expect(validateCase(".eslintrc.json", "kebab")).toBe(true);
+    expect(validateCase(".gitignore", "pascal")).toBe(true);
+    expect(validateCase(".DS_Store", "snake")).toBe(true);
+  });
+
   test("validates kebab-case", () => {
     expect(validateCase("my-component", "kebab")).toBe(true);
     expect(validateCase("my-component.ts", "kebab")).toBe(true);

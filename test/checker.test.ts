@@ -716,10 +716,10 @@ describe("match rules", () => {
   });
 
   // =========================================================================
-  // Hidden files
+  // Hidden files - should be EXEMPT from case validation
   // =========================================================================
 
-  test("validates hidden files with case rules", async () => {
+  test("hidden files are exempt from case validation", async () => {
     const config: RepoLintConfig = {
       mode: "strict",
       rules: {
@@ -736,15 +736,44 @@ describe("match rules", () => {
       config,
       makeFiles([
         "modules/user",
-        "modules/user/.gitignore", // Hidden file - should still be validated
-        "modules/user/.DS_Store", // Hidden file with uppercase
+        "modules/user/.gitignore", // Hidden - exempt
+        "modules/user/.DS_Store", // Hidden - exempt (even with uppercase)
+        "modules/user/.env", // Hidden - exempt
+        "modules/user/.eslintrc.json", // Hidden - exempt
+        "modules/user/normal-file.ts", // Not hidden - validated
       ]),
     );
 
-    // .gitignore is technically kebab-case (all lowercase with dot)
-    // .DS_Store has uppercase, fails kebab-case
+    // Hidden files should NOT produce violations
     const matchViolations = result.violations.filter((v) => v.rule === "match");
-    expect(matchViolations.length).toBeGreaterThanOrEqual(1);
+    expect(matchViolations.length).toBe(0);
+  });
+
+  test("hidden files with invalid non-hidden siblings still caught", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [
+          {
+            pattern: "modules/*",
+            childCase: "kebab",
+          },
+        ],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "modules/user",
+        "modules/user/.gitignore", // Hidden - exempt
+        "modules/user/InvalidName.ts", // Not hidden - should fail
+      ]),
+    );
+
+    const matchViolations = result.violations.filter((v) => v.rule === "match");
+    expect(matchViolations.length).toBe(1);
+    expect(matchViolations[0]?.path).toContain("InvalidName.ts");
   });
 
   // =========================================================================
@@ -833,5 +862,220 @@ describe("match rules", () => {
     const matchViolations = result.violations.filter((v) => v.rule === "match");
     expect(matchViolations.length).toBe(1);
     expect(matchViolations[0]?.path).toContain("styles.css");
+  });
+
+  // =========================================================================
+  // Suggestions in violations
+  // =========================================================================
+
+  test("provides case suggestions in violations", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [
+          {
+            pattern: "modules/*",
+            case: "kebab",
+          },
+        ],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "modules/UserProfile", // PascalCase - should suggest user-profile
+      ]),
+    );
+
+    const matchViolations = result.violations.filter((v) => v.rule === "match");
+    expect(matchViolations.length).toBe(1);
+    expect(matchViolations[0]?.suggestions).toBeDefined();
+    expect(matchViolations[0]?.suggestions?.[0]).toBe("user-profile");
+  });
+
+  // =========================================================================
+  // Empty pattern handling
+  // =========================================================================
+
+  test("warns on empty pattern", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [
+          {
+            pattern: "",
+            require: ["index.ts"],
+          },
+        ],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "src",
+        "src/index.ts",
+      ]),
+    );
+
+    const warnings = result.violations.filter(
+      (v) => v.rule === "match" && v.severity === "warning"
+    );
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]?.message).toContain("empty pattern");
+  });
+
+  test("warns on whitespace-only pattern", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [
+          {
+            pattern: "   ",
+            require: ["index.ts"],
+          },
+        ],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "src",
+        "src/index.ts",
+      ]),
+    );
+
+    const warnings = result.violations.filter(
+      (v) => v.rule === "match" && v.severity === "warning"
+    );
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]?.message).toContain("empty pattern");
+  });
+
+  // =========================================================================
+  // Duplicate violation prevention
+  // =========================================================================
+
+  test("deduplicates violations from overlapping rules", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [
+          {
+            pattern: "modules/*",
+            forbid: ["temp.ts"],
+          },
+          {
+            pattern: "modules/user",
+            forbid: ["temp.ts"],
+          },
+        ],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "modules/user",
+        "modules/user/temp.ts", // Both rules match, but should only get ONE violation
+      ]),
+    );
+
+    const matchViolations = result.violations.filter((v) => v.rule === "match");
+    expect(matchViolations.length).toBe(1); // Deduplicated!
+  });
+
+  // =========================================================================
+  // Very deep nesting (stack overflow protection)
+  // =========================================================================
+
+  test("handles very deep directory nesting", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [
+          {
+            pattern: "a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t",
+            require: ["index.ts"],
+          },
+        ],
+      },
+    };
+
+    // Create a 20-level deep path
+    const deepPath = "a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t";
+    const result = await runCheck(
+      config,
+      makeFiles([
+        deepPath,
+        `${deepPath}/index.ts`,
+      ]),
+    );
+
+    // Should not throw stack overflow
+    const matchViolations = result.violations.filter((v) => v.rule === "match");
+    expect(matchViolations.length).toBe(0);
+  });
+
+  // =========================================================================
+  // Paths with spaces
+  // =========================================================================
+
+  test("handles paths with spaces", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [
+          {
+            pattern: "my modules/*",
+            require: ["index.ts"],
+          },
+        ],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "my modules/user",
+        "my modules/user/index.ts",
+      ]),
+    );
+
+    const matchViolations = result.violations.filter((v) => v.rule === "match");
+    expect(matchViolations.length).toBe(0);
+  });
+
+  // =========================================================================
+  // Special characters in paths
+  // =========================================================================
+
+  test("handles special characters in directory names", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [
+          {
+            pattern: "modules/*",
+            require: ["index.ts"],
+          },
+        ],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "modules/@scope",
+        "modules/@scope/index.ts",
+        "modules/module-v2.0",
+        "modules/module-v2.0/index.ts",
+      ]),
+    );
+
+    const matchViolations = result.violations.filter((v) => v.rule === "match");
+    expect(matchViolations.length).toBe(0);
   });
 });
