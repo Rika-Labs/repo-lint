@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `MatcherCache` class for creating isolated matcher caches
+- Optional `cache` parameter to all matcher functions (`matches`, `matchesAny`, `createMatcher`, `matchesWithBraces`, etc.)
+- Thread-safety documentation and warnings for matcher cache usage
+
+### Changed
+
+- Matcher cache is now injectable, allowing isolated caches for thread-safe concurrent operations
+- All matcher functions now accept optional `MatcherOptions` parameter for custom cache instances
+
+### Fixed
+
+- Addressed thread-safety concerns with module-level matcher cache ([#4](https://github.com/Rika-Labs/repo-lint/issues/4))
+  - Default behavior unchanged (uses shared module-level cache for performance)
+  - Isolated caches can now be created for Web Workers or Bun worker threads
+  - Prominently documented thread-safety limitations
+- Fixed cache eviction for small cache sizes (1-9) - now evicts at least 1 entry when at capacity
+
 ## [2.0.0] - 2026-01-18
 
 ### Fixed
