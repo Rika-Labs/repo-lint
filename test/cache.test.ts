@@ -116,12 +116,12 @@ describe("cache race condition protection", () => {
     const configContent = "mode: strict";
 
     const result1: CheckResult = {
-      violations: [{ message: "test1", severity: "error", path: "a.ts" }],
+      violations: [{ message: "test1", severity: "error", path: "a.ts", rule: "test-rule" }],
       summary: { total: 1, errors: 1, warnings: 0, filesChecked: 1, duration: 100 },
     };
 
     const result2: CheckResult = {
-      violations: [{ message: "test2", severity: "error", path: "b.ts" }],
+      violations: [{ message: "test2", severity: "error", path: "b.ts", rule: "test-rule" }],
       summary: { total: 1, errors: 1, warnings: 0, filesChecked: 1, duration: 200 },
     };
 
@@ -155,7 +155,7 @@ describe("cache race condition protection", () => {
       Effect.runPromise(readCache(testDir, configContent, fileHash)),
       Effect.runPromise(
         writeCache(testDir, configContent, fileHash, files.length, {
-          violations: [{ message: "test", severity: "error", path: "a.ts" }],
+          violations: [{ message: "test", severity: "error", path: "a.ts", rule: "test-rule" }],
           summary: { total: 1, errors: 1, warnings: 0, filesChecked: 1, duration: 100 },
         }),
       ),

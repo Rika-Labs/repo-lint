@@ -78,7 +78,7 @@ const acquireLock = (root: string): Effect.Effect<void, never, never> =>
           await fd.close();
 
           return;
-        } catch (error) {
+        } catch (_error) {
           // Lock file exists, check if we've timed out
           if (Date.now() - startTime > LOCK_TIMEOUT_MS) {
             // Check if lock is stale (older than timeout)
