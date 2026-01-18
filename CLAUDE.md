@@ -100,6 +100,15 @@ src/
 test/               # Tests (flat structure, *.test.ts)
 ```
 
+## Development Workflow
+
+When making changes to this project, always follow these steps:
+
+1. **Add Tests** - Write tests for any new features or bug fixes
+2. **Update Changelog** - Add notes to CHANGELOG.md describing your changes
+3. **Run Validation** - Execute `bun test` and `bun run lint` to ensure all checks pass
+4. **Create a PR** - Once all validation passes, create a pull request for review
+
 ## Commit Convention
 
 Uses [Conventional Commits](https://www.conventionalcommits.org/):
