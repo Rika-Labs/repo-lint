@@ -121,6 +121,23 @@ pattern: "modules/**"
 # ✓ matches: modules/chat, modules/chat/stream, modules/a/b/c
 ```
 
+### Basename Patterns
+
+Patterns without `/` are automatically expanded to match anywhere in the path:
+
+```yaml
+# Basename patterns (auto-expanded)
+ignore:
+  - "*.log"      # Matches debug.log, src/debug.log, a/b/c/app.log
+  - "*.d.ts"     # Matches index.d.ts, types/api.d.ts
+
+# Path patterns (NOT expanded)
+forbidPaths:
+  - "src/*.log"  # Only matches src/debug.log, NOT src/sub/debug.log
+```
+
+This makes `ignore` and `forbidPaths` configs work intuitively without requiring `**/` prefixes.
+
 ### Cross-Platform Paths
 
 Windows-style backslashes are automatically normalized to forward slashes:

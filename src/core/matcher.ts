@@ -73,12 +73,47 @@ export const normalizePath = (p: string): string =>
  * Normalize a glob pattern for consistent matching.
  * - Removes trailing slashes (directories don't need them in patterns)
  * - Normalizes unicode to NFC form
+ * - Auto-expands basename-only patterns to match anywhere in path
  *
  * This ensures that `src/` and `src` are treated identically as patterns,
  * which matches user expectations for directory patterns.
+ *
+ * ## Basename Pattern Expansion
+ *
+ * Patterns without `/` are treated as basename patterns and auto-expanded
+ * to match anywhere in the path. This preserves the intuitive behavior
+ * where `*.log` matches `src/debug.log`.
+ *
+ * Examples:
+ * - `*.log` → `**\/*.log` (matches debug.log, src/debug.log, a/b/c/debug.log)
+ * - `*.d.ts` → `**\/*.d.ts` (matches index.d.ts, types/index.d.ts)
+ * - `src/*.ts` → `src/*.ts` (no change - has path separator)
+ * - `**\/*.ts` → `**\/*.ts` (no change - already has **)
  */
-const normalizePattern = (pattern: string): string =>
-  pattern.normalize("NFC").replace(/\/$/, "");
+const normalizePattern = (pattern: string): string => {
+  let normalized = pattern.normalize("NFC").replace(/\/$/, "");
+
+  // Auto-expand basename-only patterns (no /) to match anywhere
+  // e.g., "*.log" becomes "**/*.log" to match "src/debug.log"
+  // But don't expand if it already has path separators or **
+  if (!normalized.includes("/")) {
+    // Handle negation patterns specially: !*.js -> !**/*.js
+    const isNegation = normalized.startsWith("!");
+    const patternWithoutNegation = isNegation ? normalized.slice(1) : normalized;
+
+    // Don't expand if already starts with **
+    if (!patternWithoutNegation.startsWith("**")) {
+      // Only expand if it contains glob characters (*, ?, [...])
+      // Note: we check the pattern without ! since ! is the negation operator
+      if (/[*?[\]]/.test(patternWithoutNegation)) {
+        const expanded = `**/${patternWithoutNegation}`;
+        normalized = isNegation ? `!${expanded}` : expanded;
+      }
+    }
+  }
+
+  return normalized;
+};
 
 /**
  * Validate a brace pattern for correctness.

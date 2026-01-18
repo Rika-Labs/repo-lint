@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Now, `modules/*` only matches `modules/chat` (single segment)
   - Use `**` to match across path separators: `modules/**` matches `modules/chat/stream`
 
+- Basename-only glob patterns (e.g., `*.log`, `*.d.ts`) are auto-expanded to match anywhere
+  - `*.log` automatically becomes `**/*.log` so it matches `src/debug.log`
+  - This preserves intuitive behavior for `ignore` and `forbidPaths` configs
+  - Patterns with `/` are NOT expanded (e.g., `src/*.ts` stays as-is)
+  - Literal patterns without glob chars are NOT expanded (e.g., `package.json`)
+
 - Unicode paths now match correctly regardless of NFC/NFD normalization
   - `café.ts` (composed) now matches `café.ts` (decomposed)
 

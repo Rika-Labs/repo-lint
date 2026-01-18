@@ -456,3 +456,55 @@ describe("pattern normalization consistency", () => {
     expect(sizeAfterSecond).toBe(sizeAfterFirst);
   });
 });
+
+describe("basename pattern auto-expansion", () => {
+  // This ensures patterns like "*.log" match "src/debug.log"
+  // which is the expected behavior for ignore/forbidPaths configs
+
+  test("basename glob patterns match nested paths", () => {
+    expect(matches("debug.log", "*.log")).toBe(true);
+    expect(matches("src/debug.log", "*.log")).toBe(true);
+    expect(matches("a/b/c/debug.log", "*.log")).toBe(true);
+  });
+
+  test("*.d.ts matches nested declaration files", () => {
+    expect(matches("index.d.ts", "*.d.ts")).toBe(true);
+    expect(matches("types/index.d.ts", "*.d.ts")).toBe(true);
+    expect(matches("src/types/api.d.ts", "*.d.ts")).toBe(true);
+  });
+
+  test("path patterns are NOT auto-expanded", () => {
+    // Patterns with / should NOT be expanded
+    expect(matches("src/file.ts", "src/*.ts")).toBe(true);
+    expect(matches("src/sub/file.ts", "src/*.ts")).toBe(false); // * doesn't cross /
+    expect(matches("other/file.ts", "src/*.ts")).toBe(false);
+  });
+
+  test("literal patterns without globs are NOT auto-expanded", () => {
+    // No glob characters = exact match only
+    expect(matches("package.json", "package.json")).toBe(true);
+    expect(matches("src/package.json", "package.json")).toBe(false);
+    expect(matches("README.md", "README.md")).toBe(true);
+    expect(matches("docs/README.md", "README.md")).toBe(false);
+  });
+
+  test("patterns already starting with ** are NOT double-expanded", () => {
+    expect(matches("src/file.ts", "**/*.ts")).toBe(true);
+    expect(matches("file.ts", "**/*.ts")).toBe(true);
+  });
+
+  test("character class patterns are auto-expanded", () => {
+    expect(matches("a1.txt", "[a-z][0-9].txt")).toBe(true);
+    expect(matches("src/a1.txt", "[a-z][0-9].txt")).toBe(true);
+  });
+
+  test("negation patterns are auto-expanded", () => {
+    expect(matches("file.ts", "!*.js")).toBe(true);
+    expect(matches("src/file.ts", "!*.js")).toBe(true);
+  });
+
+  test("question mark patterns are auto-expanded", () => {
+    expect(matches("a.ts", "?.ts")).toBe(true);
+    expect(matches("src/a.ts", "?.ts")).toBe(true);
+  });
+});
