@@ -17,6 +17,7 @@ import {
   clearMatcherCache,
   getMatcherCacheSize,
   getMaxCacheSize,
+  MatcherCache,
 } from "../src/core/matcher.js";
 
 // Clear cache before each test for isolation
@@ -506,5 +507,156 @@ describe("basename pattern auto-expansion", () => {
   test("question mark patterns are auto-expanded", () => {
     expect(matches("a.ts", "?.ts")).toBe(true);
     expect(matches("src/a.ts", "?.ts")).toBe(true);
+  });
+});
+
+describe("MatcherCache class", () => {
+  test("creates isolated cache instances", () => {
+    const cache1 = new MatcherCache();
+    const cache2 = new MatcherCache();
+
+    expect(cache1.size).toBe(0);
+    expect(cache2.size).toBe(0);
+
+    // Use cache1
+    matches("file.ts", "*.ts", { cache: cache1 });
+    expect(cache1.size).toBeGreaterThan(0);
+    expect(cache2.size).toBe(0); // cache2 unaffected
+  });
+
+  test("custom cache does not affect default cache", () => {
+    clearMatcherCache();
+    const customCache = new MatcherCache();
+
+    // Use custom cache
+    matches("file.ts", "custom-*.ts", { cache: customCache });
+    expect(customCache.size).toBeGreaterThan(0);
+    expect(getMatcherCacheSize()).toBe(0); // default cache unaffected
+
+    // Use default cache
+    matches("file.ts", "default-*.ts");
+    expect(getMatcherCacheSize()).toBeGreaterThan(0);
+  });
+
+  test("accepts custom max size", () => {
+    const cache = new MatcherCache(500);
+    expect(cache.limit).toBe(500);
+  });
+
+  test("custom cache evicts when full", () => {
+    const cache = new MatcherCache(10);
+
+    // Fill beyond limit
+    for (let i = 0; i < 20; i++) {
+      matches("file.ts", `pattern-${i}`, { cache });
+    }
+
+    // Should be at or below limit
+    expect(cache.size).toBeLessThanOrEqual(10);
+  });
+
+  test("small cache sizes (1-9) evict at least 1 entry", () => {
+    // Test cache sizes where Math.floor(size * 0.1) would be 0
+    for (let maxSize = 1; maxSize <= 9; maxSize++) {
+      const cache = new MatcherCache(maxSize);
+
+      // Fill to capacity
+      for (let i = 0; i < maxSize; i++) {
+        matches("file.ts", `pattern-${i}`, { cache });
+      }
+      expect(cache.size).toBe(maxSize);
+
+      // Add one more - should evict at least 1 entry
+      matches("file.ts", `pattern-overflow`, { cache });
+      expect(cache.size).toBeLessThanOrEqual(maxSize);
+    }
+  });
+
+  test("cache size 1 maintains exactly 1 entry", () => {
+    const cache = new MatcherCache(1);
+
+    matches("file.ts", "pattern-1", { cache });
+    expect(cache.size).toBe(1);
+
+    matches("file.ts", "pattern-2", { cache });
+    expect(cache.size).toBe(1);
+
+    matches("file.ts", "pattern-3", { cache });
+    expect(cache.size).toBe(1);
+  });
+
+  test("cache.clear() clears isolated cache", () => {
+    const cache = new MatcherCache();
+    matches("file.ts", "*.ts", { cache });
+    expect(cache.size).toBeGreaterThan(0);
+
+    cache.clear();
+    expect(cache.size).toBe(0);
+  });
+});
+
+describe("thread-safe cache usage", () => {
+  test("createMatcher with custom cache", () => {
+    const cache = new MatcherCache();
+    const matcher = createMatcher(["*.ts", "*.tsx"], { cache });
+
+    expect(matcher("file.ts")).toBe(true);
+    expect(matcher("file.tsx")).toBe(true);
+    expect(matcher("file.js")).toBe(false);
+    expect(cache.size).toBeGreaterThan(0);
+  });
+
+  test("matchesAny with custom cache", () => {
+    const cache = new MatcherCache();
+    const result = matchesAny("file.ts", ["*.ts", "*.tsx"], { cache });
+
+    expect(result).toBe(true);
+    expect(cache.size).toBeGreaterThan(0);
+  });
+
+  test("matchesWithBraces with custom cache", () => {
+    const cache = new MatcherCache();
+    const result = matchesWithBraces("file.ts", "*.{ts,tsx}", { cache });
+
+    expect(result).toBe(true);
+    expect(cache.size).toBeGreaterThan(0);
+  });
+
+  test("matchesEffect with custom cache", async () => {
+    const cache = new MatcherCache();
+    const result = await Effect.runPromise(
+      matchesEffect("file.ts", "*.ts", { cache }),
+    );
+
+    expect(result).toBe(true);
+    expect(cache.size).toBeGreaterThan(0);
+  });
+
+  test("matchesAnyEffect with custom cache", async () => {
+    const cache = new MatcherCache();
+    const result = await Effect.runPromise(
+      matchesAnyEffect("file.ts", ["*.ts", "*.tsx"], { cache }),
+    );
+
+    expect(result).toBe(true);
+    expect(cache.size).toBeGreaterThan(0);
+  });
+
+  test("multiple isolated caches don't interfere", () => {
+    const cache1 = new MatcherCache();
+    const cache2 = new MatcherCache();
+
+    // Use different patterns in different caches
+    matches("file.ts", "pattern-a-*.ts", { cache: cache1 });
+    matches("file.ts", "pattern-b-*.ts", { cache: cache2 });
+
+    // Both should have their own entries
+    expect(cache1.size).toBeGreaterThan(0);
+    expect(cache2.size).toBeGreaterThan(0);
+
+    // Clear one shouldn't affect the other
+    cache1.clear();
+    expect(cache1.size).toBe(0);
+    expect(cache2.size).toBeGreaterThan(0);
   });
 });

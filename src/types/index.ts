@@ -232,6 +232,10 @@ export const ScanSettings = Schema.Struct({
 });
 export type ScanSettings = typeof ScanSettings.Type;
 
+// ============================================================================
+// Scan Overrides (CLI Arguments)
+// ============================================================================
+
 export type ScanOverrides = {
   readonly maxDepth: Option.Option<number>;
   readonly maxFiles: Option.Option<number>;

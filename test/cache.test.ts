@@ -106,3 +106,126 @@ describe("cache maintenance", () => {
     expect(Option.isNone(stats)).toBe(true);
   });
 });
+
+describe("cache race condition protection", () => {
+  test("concurrent writes do not corrupt cache", async () => {
+    const files1 = makeFiles(["src/a.ts"]);
+    const files2 = makeFiles(["src/b.ts"]);
+    const fileHash1 = computeFileHash(files1);
+    const fileHash2 = computeFileHash(files2);
+    const configContent = "mode: strict";
+
+    const result1: CheckResult = {
+      violations: [{ message: "test1", severity: "error", path: "a.ts", rule: "test-rule" }],
+      summary: { total: 1, errors: 1, warnings: 0, filesChecked: 1, duration: 100 },
+    };
+
+    const result2: CheckResult = {
+      violations: [{ message: "test2", severity: "error", path: "b.ts", rule: "test-rule" }],
+      summary: { total: 1, errors: 1, warnings: 0, filesChecked: 1, duration: 200 },
+    };
+
+    // Run two concurrent writes
+    await Promise.all([
+      Effect.runPromise(writeCache(testDir, configContent, fileHash1, files1.length, result1)),
+      Effect.runPromise(writeCache(testDir, configContent, fileHash2, files2.length, result2)),
+    ]);
+
+    // Cache should contain one of the results (not corrupted)
+    const cached1 = await Effect.runPromise(readCache(testDir, configContent, fileHash1));
+    const cached2 = await Effect.runPromise(readCache(testDir, configContent, fileHash2));
+
+    // Either result1 or result2 should be cached (both wrote successfully, one overwrote the other)
+    // The important thing is the cache is not corrupted
+    const hasValidCache = Option.isSome(cached1) || Option.isSome(cached2);
+    expect(hasValidCache).toBe(true);
+  });
+
+  test("concurrent read and write operations", async () => {
+    const files = makeFiles(["src/a.ts", "src/b.ts"]);
+    const fileHash = computeFileHash(files);
+    const configContent = "mode: strict";
+
+    // Write initial cache
+    await Effect.runPromise(writeCache(testDir, configContent, fileHash, files.length, emptyResult));
+
+    // Run concurrent reads and a write
+    const operations = [
+      Effect.runPromise(readCache(testDir, configContent, fileHash)),
+      Effect.runPromise(readCache(testDir, configContent, fileHash)),
+      Effect.runPromise(
+        writeCache(testDir, configContent, fileHash, files.length, {
+          violations: [{ message: "test", severity: "error", path: "a.ts", rule: "test-rule" }],
+          summary: { total: 1, errors: 1, warnings: 0, filesChecked: 1, duration: 100 },
+        }),
+      ),
+      Effect.runPromise(readCache(testDir, configContent, fileHash)),
+    ];
+
+    // All operations should complete without errors
+    const results = await Promise.all(operations);
+
+    // All reads should return valid Options (Some or None)
+    expect(results[0]).toBeDefined();
+    expect(results[1]).toBeDefined();
+    expect(results[3]).toBeDefined();
+  });
+
+  test("handles stale lock files", async () => {
+    // Clean up from previous tests
+    await rm(join(testDir, ".repo-lint-cache"), { recursive: true, force: true });
+
+    const files = makeFiles(["src/a.ts"]);
+    const fileHash = computeFileHash(files);
+    const configContent = "mode: strict";
+
+    // Create a fake stale lock file
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const lockPath = join(testDir, ".repo-lint-cache", ".lock");
+    await mkdir(join(testDir, ".repo-lint-cache"), { recursive: true });
+    await writeFile(lockPath, "99999", { flag: "w" });
+
+    // Set the lock file's mtime to be very old
+    const { utimes } = await import("node:fs/promises");
+    const oldTime = Date.now() / 1000 - 10000; // 10000 seconds ago
+    await utimes(lockPath, oldTime, oldTime);
+
+    // Write should detect stale lock and succeed
+    await Effect.runPromise(writeCache(testDir, configContent, fileHash, files.length, emptyResult));
+
+    // Verify cache was written
+    const cached = await Effect.runPromise(readCache(testDir, configContent, fileHash));
+    expect(Option.isSome(cached)).toBe(true);
+  }, 10000);
+
+  test("does not release lock that was not acquired", async () => {
+    // Clean up from previous tests
+    await rm(join(testDir, ".repo-lint-cache"), { recursive: true, force: true });
+
+    const files = makeFiles(["src/a.ts"]);
+    const fileHash = computeFileHash(files);
+    const configContent = "mode: strict";
+
+    // Create a lock file that won't be stale
+    const { mkdir, writeFile, readFile, access } = await import("node:fs/promises");
+    const lockPath = join(testDir, ".repo-lint-cache", ".lock");
+    await mkdir(join(testDir, ".repo-lint-cache"), { recursive: true });
+    await writeFile(lockPath, "99999", { flag: "w" });
+
+    // Verify lock file was created
+    const lockCreated = await readFile(lockPath, "utf-8");
+    expect(lockCreated).toBe("99999");
+
+    // Attempt to write - should timeout and not delete the lock file
+    await Effect.runPromise(writeCache(testDir, configContent, fileHash, files.length, emptyResult));
+
+    // Verify lock file still exists with original content
+    try {
+      await access(lockPath);
+      const lockContent = await readFile(lockPath, "utf-8");
+      expect(lockContent).toBe("99999");
+    } catch (error) {
+      throw new Error(`Lock file should still exist but got: ${error}`);
+    }
+  }, 10000);
+});

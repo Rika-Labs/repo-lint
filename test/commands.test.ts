@@ -3,9 +3,10 @@ import { Effect, Exit, Option } from "effect";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { runCheck, type ScanOverrides } from "../src/commands/check.js";
+import { runCheck } from "../src/commands/check.js";
 import { runInspect } from "../src/commands/inspect.js";
 import { getCacheStats, clearCache } from "../src/cache/index.js";
+import type { ScanOverrides } from "../src/types/index.js";
 
 let testDir: string;
 let originalCwd: string;
