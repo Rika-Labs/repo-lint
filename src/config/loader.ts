@@ -2,7 +2,7 @@ import { Effect, Option } from "effect";
 import { Schema, TreeFormatter, ParseResult } from "@effect/schema";
 import { join, dirname, resolve, relative, isAbsolute } from "node:path";
 import YAML from "yaml";
-import type { RepoLintConfig, Rules, BoundaryRule } from "../types/index.js";
+import type { RepoLintConfig, Rules } from "../types/index.js";
 import { RepoLintConfigSchema } from "../types/index.js";
 import {
   ConfigNotFoundError,
@@ -61,19 +61,8 @@ const getPreset = (name: string): Option.Option<RepoLintConfig> => {
   }
 };
 
-const resolveBoundaries = (
-  base: BoundaryRule | undefined,
-  override: BoundaryRule | undefined,
-): BoundaryRule | undefined => {
-  if (override !== undefined) return override;
-  if (base !== undefined) return base;
-  return undefined;
-};
-
 const mergeRules = (base: Rules | undefined, override: Rules | undefined): Rules => {
-  const boundaries = resolveBoundaries(base?.boundaries, override?.boundaries);
-
-  const result: Rules = {
+  return {
     forbidPaths: [...(base?.forbidPaths ?? []), ...(override?.forbidPaths ?? [])],
     forbidNames: [...(base?.forbidNames ?? []), ...(override?.forbidNames ?? [])],
     ignorePaths: [...(base?.ignorePaths ?? []), ...(override?.ignorePaths ?? [])],
@@ -82,12 +71,6 @@ const mergeRules = (base: Rules | undefined, override: Rules | undefined): Rules
     when: { ...base?.when, ...override?.when },
     match: [...(base?.match ?? []), ...(override?.match ?? [])],
   };
-
-  if (boundaries !== undefined) {
-    return { ...result, boundaries };
-  }
-
-  return result;
 };
 
 const mergeConfigs = (base: RepoLintConfig, override: RepoLintConfig): RepoLintConfig => {
@@ -203,7 +186,6 @@ const RULE_KEYS = new Set([
   "dependencies",
   "mirror",
   "when",
-  "boundaries",
   "match",
 ]);
 

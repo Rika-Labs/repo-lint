@@ -54,7 +54,6 @@ export const runInspect = (
           yield* Console.log("  dependencies  - File dependency requirements");
           yield* Console.log("  mirror        - Mirror structure rules");
           yield* Console.log("  when          - Conditional requirements");
-          yield* Console.log("  boundaries    - Module boundary rules");
           yield* Console.log("  match         - Pattern-based directory validation rules");
           return;
         }
@@ -86,8 +85,6 @@ const getRuleByName = (rules: Rules, name: string): Option.Option<unknown> => {
       return Option.fromNullable(rules.mirror);
     case "when":
       return Option.fromNullable(rules.when);
-    case "boundaries":
-      return Option.fromNullable(rules.boundaries);
     case "match":
       return Option.fromNullable(rules.match);
     default:

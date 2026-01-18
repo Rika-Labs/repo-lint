@@ -163,13 +163,6 @@ export const WhenRule = Schema.Record({
 });
 export type WhenRule = typeof WhenRule.Type;
 
-export const BoundaryRule = Schema.Struct({
-  modules: Schema.String,
-  publicApi: Schema.optional(Schema.String),
-  forbidDeepImports: Schema.optional(Schema.Boolean),
-});
-export type BoundaryRule = typeof BoundaryRule.Type;
-
 /**
  * Match-based rules allow targeting specific directory patterns
  * and enforcing structure requirements without defining the entire layout tree.
@@ -213,7 +206,6 @@ export const Rules = Schema.Struct({
   dependencies: Schema.optional(DependencyRule),
   mirror: Schema.optional(Schema.Array(MirrorRule)),
   when: Schema.optional(WhenRule),
-  boundaries: Schema.optional(BoundaryRule),
   match: Schema.optional(Schema.Array(MatchRule)),
 });
 export type Rules = typeof Rules.Type;

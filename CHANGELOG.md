@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.0] - 2026-01-18
 
+### Removed
+
+- **BREAKING**: Removed unimplemented `boundaries` rule from schema ([#6](https://github.com/Rika-Labs/repo-lint/issues/6))
+  - The `BoundaryRule` schema was exported but had no implementation
+  - This caused silent failures where users could configure boundaries but nothing would happen
+  - Removed from schema, config loader, and inspect command to prevent confusion
+
 ### Fixed
 
 - **BREAKING**: Fixed glob pattern matching so `*` no longer matches across path separators ([#3](https://github.com/Rika-Labs/repo-lint/pull/3))
