@@ -1,9 +1,9 @@
-import { Effect, Option, Console } from "effect";
+import { Effect, Option } from "effect";
 import { dirname, resolve, isAbsolute, relative } from "node:path";
 import { findConfig, loadConfig, findWorkspaceConfigs } from "../config/index.js";
 import { scan, scanWorkspaces, readFileContent } from "../core/scanner.js";
 import { check } from "../rules/index.js";
-import { format, type OutputFormat } from "../output/index.js";
+import type { OutputFormat } from "../output/index.js";
 import { readCache, writeCache, computeFileHash } from "../cache/index.js";
 import type { CheckResult, RepoLintConfig, ScanOverrides } from "../types/index.js";
 import { ConfigNotFoundError, ConfigParseError, ScanError, PathTraversalError } from "../errors.js";
@@ -131,7 +131,6 @@ export const runCheck = (
       : yield* findConfig(root);
 
     if (Option.isNone(configPath)) {
-      yield* Console.error("No config file found. Create .repo-lint.yaml");
       return yield* Effect.fail(new ConfigNotFoundError({ path: root }));
     }
 
@@ -156,12 +155,6 @@ export const runCheck = (
 
     if (workspaces !== undefined && workspaces.length > 0) {
       const workspaceConfigs = yield* findWorkspaceConfigs(configRoot, workspaces).pipe(
-        Effect.tap((configs) => {
-          if (configs.length === 0) {
-            return Console.log("Warning: No workspace configs found");
-          }
-          return Effect.void;
-        }),
         Effect.orElseSucceed(() => [] as readonly string[]),
       );
 
@@ -208,8 +201,6 @@ export const runCheck = (
         options.scanOverrides,
       );
     }
-
-    yield* Console.log(format(result, options.format));
 
     return result;
   });

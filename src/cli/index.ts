@@ -4,6 +4,7 @@ import { parseArgs } from "./parser.js";
 import { runCheck } from "../commands/check.js";
 import { runInspect } from "../commands/inspect.js";
 import { getVersion } from "../version.js";
+import { format } from "../output/index.js";
 
 const HELP = `
 repo-lint v${getVersion()} - High-performance filesystem layout linter
@@ -77,6 +78,8 @@ const program = Effect.gen(function* () {
         scanOverrides: args.scanOverrides,
       });
 
+      yield* Console.log(format(result, args.format));
+
       return result.summary.errors > 0 ? 1 : 0;
     }
   }
@@ -86,6 +89,12 @@ const program = Effect.gen(function* () {
 const main = Effect.gen(function* () {
   const exitCode = yield* program.pipe(
     Effect.catchAll((error) => {
+      // Provide user-friendly messages for common errors
+      if (typeof error === "object" && error !== null && "_tag" in error) {
+        if (error._tag === "ConfigNotFoundError") {
+          return Console.error("No config file found. Create .repo-lint.yaml").pipe(Effect.map(() => 1));
+        }
+      }
       return Console.error(String(error.message)).pipe(Effect.map(() => 1));
     }),
   );
