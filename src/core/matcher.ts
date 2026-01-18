@@ -15,9 +15,9 @@ export type Matcher = (path: string) => boolean;
  *   With `bash: true`, `*` behaves like `**` and matches across `/`, which
  *   breaks patterns like `modules/*` (would incorrectly match `modules/a/b`).
  *
- * ## Breaking Change (v1.1.1)
+ * ## Breaking Change (v2.0.0)
  *
- * Prior to v1.1.1, `bash: true` was used, causing `*` to match across path
+ * Prior to v2.0.0, `bash: true` was used, causing `*` to match across path
  * separators. If you relied on this behavior, update your patterns to use `**`.
  *
  * @see https://github.com/Rika-Labs/repo-lint/pull/3

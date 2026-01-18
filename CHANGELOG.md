@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.1] - 2026-01-18
+## [2.0.0] - 2026-01-18
 
 ### Fixed
 
@@ -51,7 +51,7 @@ If you have patterns that relied on `*` matching across `/`, update them to use 
 match:
   - pattern: "src/*"  # This matched src/a/b/c incorrectly
 
-# After (v1.1.1+)
+# After (v2.0.0+)
 match:
   - pattern: "src/**"  # Use ** to match across directories
   # OR
