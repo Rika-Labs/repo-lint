@@ -1,73 +1,164 @@
 import { Effect } from "effect";
 import type { CheckContext } from "./context.js";
-import { addViolation } from "./context.js";
-import { matches, matchesAny, getBasename, getParent } from "../core/matcher.js";
+import { addViolation, addWarning } from "./context.js";
+import { matches, matchesAny, getBasename } from "../core/matcher.js";
 import { validateCase, getCaseName } from "../core/case.js";
-import type { MatchRule } from "../types/index.js";
-
-const RULE_NAME = "match";
+import type { MatchRule, FileEntry } from "../types/index.js";
+import { RuleNames } from "../types/index.js";
 
 /**
- * Get all unique directory paths from the file list
+ * Directory node in the pre-built tree structure.
+ * Built once, traversed efficiently.
  */
-const getDirectories = (ctx: CheckContext): Set<string> => {
-  const dirs = new Set<string>();
-  for (const file of ctx.files) {
+interface DirNode {
+  readonly path: string;
+  readonly name: string;
+  readonly children: Map<string, DirNode>;
+  readonly files: string[];
+}
+
+/**
+ * Build a directory tree from the flat file list.
+ * O(n) where n is the number of files - single pass.
+ */
+const buildDirectoryTree = (files: readonly FileEntry[]): DirNode => {
+  const root: DirNode = {
+    path: "",
+    name: "",
+    children: new Map(),
+    files: [],
+  };
+
+  // First pass: create all directory nodes
+  const dirMap = new Map<string, DirNode>();
+  dirMap.set("", root);
+
+  const getOrCreateDir = (path: string): DirNode => {
+    if (path === "") return root;
+
+    const existing = dirMap.get(path);
+    if (existing) return existing;
+
+    const parts = path.split("/");
+    const name = parts[parts.length - 1] ?? "";
+    const parentPath = parts.slice(0, -1).join("/");
+    const parent = getOrCreateDir(parentPath);
+
+    const node: DirNode = {
+      path,
+      name,
+      children: new Map(),
+      files: [],
+    };
+
+    parent.children.set(name, node);
+    dirMap.set(path, node);
+    return node;
+  };
+
+  // Second pass: populate files and ensure directories exist
+  for (const file of files) {
     if (file.isDirectory) {
-      dirs.add(file.relativePath);
+      getOrCreateDir(file.relativePath);
     } else {
-      // Add parent directories of files
-      let parent = getParent(file.relativePath);
-      while (parent && parent !== ".") {
-        dirs.add(parent);
-        parent = getParent(parent);
+      const lastSlash = file.relativePath.lastIndexOf("/");
+      const dirPath = lastSlash === -1 ? "" : file.relativePath.slice(0, lastSlash);
+      const fileName = lastSlash === -1 ? file.relativePath : file.relativePath.slice(lastSlash + 1);
+      const dir = getOrCreateDir(dirPath);
+      (dir.files as string[]).push(fileName);
+    }
+  }
+
+  return root;
+};
+
+/**
+ * Collect all directories that match a pattern.
+ * Traverses the tree once per rule.
+ */
+const collectMatchingDirs = (
+  root: DirNode,
+  pattern: string,
+  exclude: readonly string[] | undefined,
+): DirNode[] => {
+  const results: DirNode[] = [];
+
+  const traverse = (node: DirNode): void => {
+    // Check if this directory matches
+    if (node.path !== "" && matches(node.path, pattern)) {
+      // Check exclusions
+      if (!exclude || !matchesAny(node.path, exclude)) {
+        results.push(node);
       }
     }
-  }
-  return dirs;
-};
 
-/**
- * Get direct children of a directory
- */
-const getDirectChildren = (
-  ctx: CheckContext,
-  dirPath: string,
-): { files: string[]; dirs: string[] } => {
-  const prefix = dirPath === "" ? "" : `${dirPath}/`;
-  const files: string[] = [];
-  const dirs: string[] = [];
-
-  for (const file of ctx.files) {
-    if (!file.relativePath.startsWith(prefix)) continue;
-
-    const rest = file.relativePath.slice(prefix.length);
-    // Skip if it's a nested path (contains more slashes)
-    if (rest.includes("/")) continue;
-    // Skip empty (the directory itself)
-    if (rest === "") continue;
-
-    if (file.isDirectory) {
-      dirs.push(rest);
-    } else {
-      files.push(rest);
+    // Recurse into children
+    for (const child of node.children.values()) {
+      traverse(child);
     }
-  }
+  };
 
-  return { files, dirs };
+  traverse(root);
+  return results;
 };
 
 /**
- * Check a single match rule against a matched directory
+ * Get all direct children (files and subdirectories) of a directory node.
+ */
+const getDirectChildren = (node: DirNode): string[] => {
+  const entries: string[] = [...node.files];
+  for (const child of node.children.values()) {
+    entries.push(child.name);
+  }
+  return entries;
+};
+
+/**
+ * Construct a proper path, handling empty directory paths.
+ */
+const joinPath = (dirPath: string, entry: string): string => {
+  return dirPath === "" ? entry : `${dirPath}/${entry}`;
+};
+
+/**
+ * Check a single match rule against a matched directory.
  */
 const checkMatchRule = (
   ctx: CheckContext,
   rule: MatchRule,
-  dirPath: string,
+  node: DirNode,
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
-    const children = getDirectChildren(ctx, dirPath);
-    const allEntries = [...children.files, ...children.dirs];
+    const allEntries = getDirectChildren(node);
+
+    // Check naming convention on the matched directory itself
+    if (rule.case) {
+      if (node.name !== "" && !validateCase(node.name, rule.case)) {
+        yield* addViolation(ctx, {
+          path: node.path,
+          rule: RuleNames.Match,
+          message: `directory name must be ${getCaseName(rule.case)}`,
+          expected: getCaseName(rule.case),
+          got: node.name,
+        });
+      }
+    }
+
+    // Check naming convention on children if childCase is specified
+    if (rule.childCase) {
+      for (const entry of allEntries) {
+        const name = getBasename(entry);
+        if (!validateCase(name, rule.childCase)) {
+          yield* addViolation(ctx, {
+            path: joinPath(node.path, entry),
+            rule: RuleNames.Match,
+            message: `name must be ${getCaseName(rule.childCase)}`,
+            expected: getCaseName(rule.childCase),
+            got: name,
+          });
+        }
+      }
+    }
 
     // Check required entries
     if (rule.require) {
@@ -75,8 +166,8 @@ const checkMatchRule = (
         const found = allEntries.some((entry) => matches(entry, required));
         if (!found) {
           yield* addViolation(ctx, {
-            path: dirPath,
-            rule: RULE_NAME,
+            path: node.path,
+            rule: RuleNames.Match,
             message: `missing required entry: ${required}`,
           });
         }
@@ -88,8 +179,8 @@ const checkMatchRule = (
       for (const entry of allEntries) {
         if (matchesAny(entry, rule.forbid)) {
           yield* addViolation(ctx, {
-            path: `${dirPath}/${entry}`,
-            rule: RULE_NAME,
+            path: joinPath(node.path, entry),
+            rule: RuleNames.Match,
             message: "forbidden entry in matched directory",
           });
         }
@@ -100,55 +191,61 @@ const checkMatchRule = (
     if (rule.strict) {
       const allowedPatterns = [...(rule.require ?? []), ...(rule.allow ?? [])];
 
-      for (const entry of allEntries) {
-        const isAllowed = allowedPatterns.length === 0 || matchesAny(entry, allowedPatterns);
-        if (!isAllowed) {
+      // If strict mode with no allowed patterns, reject ALL entries
+      if (allowedPatterns.length === 0) {
+        for (const entry of allEntries) {
           yield* addViolation(ctx, {
-            path: `${dirPath}/${entry}`,
-            rule: RULE_NAME,
-            message: "entry not allowed by strict match rule",
+            path: joinPath(node.path, entry),
+            rule: RuleNames.Match,
+            message: "entry not allowed (strict mode with no allowed patterns)",
           });
         }
-      }
-    }
-
-    // Check naming convention
-    if (rule.case) {
-      for (const entry of allEntries) {
-        const name = getBasename(entry);
-        if (!validateCase(name, rule.case)) {
-          yield* addViolation(ctx, {
-            path: `${dirPath}/${entry}`,
-            rule: RULE_NAME,
-            message: `name must be ${getCaseName(rule.case)}`,
-            expected: getCaseName(rule.case),
-            got: name,
-          });
+      } else {
+        for (const entry of allEntries) {
+          if (!matchesAny(entry, allowedPatterns)) {
+            yield* addViolation(ctx, {
+              path: joinPath(node.path, entry),
+              rule: RuleNames.Match,
+              message: "entry not allowed by strict match rule",
+            });
+          }
         }
       }
     }
   });
 
 /**
- * Check all match rules against the filesystem
+ * Check all match rules against the filesystem.
+ *
+ * Performance: O(n + r*d) where n=files, r=rules, d=matched dirs
+ * - Builds directory tree once: O(n)
+ * - For each rule, traverses tree and checks matched dirs: O(tree_size + matched_dirs)
  */
 export const checkMatch = (ctx: CheckContext): Effect.Effect<void> =>
   Effect.gen(function* () {
     const matchRules = ctx.config.rules?.match ?? [];
     if (matchRules.length === 0) return;
 
-    const directories = getDirectories(ctx);
+    // Build directory tree once - O(n)
+    const root = buildDirectoryTree(ctx.files);
 
     for (const rule of matchRules) {
-      // Find directories that match the pattern
-      for (const dirPath of directories) {
-        if (!matches(dirPath, rule.pattern)) continue;
+      // Find all directories matching the pattern
+      const matchedDirs = collectMatchingDirs(root, rule.pattern, rule.exclude);
 
-        // Check exclusions
-        if (rule.exclude && matchesAny(dirPath, rule.exclude)) continue;
+      // Warn if pattern matches nothing (likely config error)
+      if (matchedDirs.length === 0) {
+        yield* addWarning(ctx, {
+          path: ".",
+          rule: RuleNames.Match,
+          message: `match pattern "${rule.pattern}" did not match any directories`,
+        });
+        continue;
+      }
 
-        // Run checks for this matched directory
-        yield* checkMatchRule(ctx, rule, dirPath);
+      // Check each matched directory
+      for (const dir of matchedDirs) {
+        yield* checkMatchRule(ctx, rule, dir);
       }
     }
   });

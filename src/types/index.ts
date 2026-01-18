@@ -182,7 +182,8 @@ export type BoundaryRule = typeof BoundaryRule.Type;
  *       require: [controller.ts, service.ts, repo.ts]
  *       allow: [errors.ts, lib]
  *       strict: true
- *       case: kebab
+ *       case: kebab        # validates matched directory names
+ *       childCase: kebab   # validates children names
  * ```
  */
 export const MatchRule = Schema.Struct({
@@ -198,8 +199,10 @@ export const MatchRule = Schema.Struct({
   forbid: Schema.optional(Schema.Array(Schema.String)),
   /** If true, only required + allowed entries are permitted */
   strict: Schema.optional(Schema.Boolean),
-  /** Enforce naming convention for entries */
+  /** Enforce naming convention for the matched directory itself */
   case: Schema.optional(CaseStyle),
+  /** Enforce naming convention for children of matched directories */
+  childCase: Schema.optional(CaseStyle),
 });
 export type MatchRule = typeof MatchRule.Type;
 
@@ -303,6 +306,7 @@ export const RuleNames = {
   When: "when",
   Layout: "layout",
   Naming: "naming",
+  Match: "match",
 } as const;
 
 export type RuleName = (typeof RuleNames)[keyof typeof RuleNames];

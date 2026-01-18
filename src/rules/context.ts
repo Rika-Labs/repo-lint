@@ -22,6 +22,19 @@ export const addViolation = (
     { ...violation, severity: getSeverity(ctx.config.mode) },
   ]);
 
+/**
+ * Add a warning violation (always severity: "warning" regardless of mode).
+ * Used for non-critical issues like patterns matching nothing.
+ */
+export const addWarning = (
+  ctx: CheckContext,
+  violation: Omit<Violation, "severity">,
+): Effect.Effect<void> =>
+  Ref.update(ctx.violations, (vs) => [
+    ...vs,
+    { ...violation, severity: "warning" as const },
+  ]);
+
 export const markMatched = (
   ctx: CheckContext,
   path: string,
