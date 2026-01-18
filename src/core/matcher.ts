@@ -35,16 +35,83 @@ const MATCH_OPTIONS = {
 const MAX_CACHE_SIZE = 1000;
 
 /**
- * LRU-style cache for compiled matchers.
- * - Keys are normalized pattern strings
- * - Values are compiled matcher functions
- * - Automatically evicts oldest entries when MAX_CACHE_SIZE is reached
+ * Cache for compiled glob matchers with LRU-style eviction.
  *
- * Note: This is module-level state. In a library context, all callers share
- * this cache. This is intentional for performance but means patterns are
- * cached globally.
+ * **Thread Safety Warning**: This cache uses a plain Map which is not thread-safe.
+ * Concurrent access from multiple threads (e.g., Web Workers, Bun worker threads)
+ * can cause race conditions. If you need thread-safe caching, create isolated
+ * cache instances per thread using `new MatcherCache()`.
+ *
+ * ## Usage
+ *
+ * ```ts
+ * // Default: shared module-level cache (not thread-safe)
+ * const matcher = createMatcher("*.ts");
+ *
+ * // Thread-safe: isolated cache per thread/worker
+ * const cache = new MatcherCache();
+ * const matcher = createMatcher("*.ts", { cache });
+ * ```
  */
-const matcherCache = new Map<string, (path: string) => boolean>();
+export class MatcherCache {
+  private cache = new Map<string, (path: string) => boolean>();
+  private maxSize: number;
+
+  constructor(maxSize: number = MAX_CACHE_SIZE) {
+    this.maxSize = maxSize;
+  }
+
+  get(pattern: string): ((path: string) => boolean) | undefined {
+    return this.cache.get(pattern);
+  }
+
+  set(pattern: string, matcher: (path: string) => boolean): void {
+    this.evictIfNeeded();
+    this.cache.set(pattern, matcher);
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  get size(): number {
+    return this.cache.size;
+  }
+
+  get limit(): number {
+    return this.maxSize;
+  }
+
+  private evictIfNeeded(): void {
+    if (this.cache.size >= this.maxSize) {
+      // Remove oldest 10% of entries
+      const toRemove = Math.floor(this.maxSize * 0.1);
+      const keys = this.cache.keys();
+      for (let i = 0; i < toRemove; i++) {
+        const key = keys.next().value;
+        if (key !== undefined) {
+          this.cache.delete(key);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Default module-level matcher cache.
+ *
+ * **Thread Safety Warning**: This is shared mutable state. All callers share
+ * this cache, which improves performance in single-threaded environments but
+ * is NOT thread-safe. Concurrent access from Web Workers or Bun worker threads
+ * can cause race conditions.
+ *
+ * For thread-safe usage, create isolated cache instances:
+ * ```ts
+ * const cache = new MatcherCache();
+ * const matcher = createMatcher("*.ts", { cache });
+ * ```
+ */
+const defaultMatcherCache = new MatcherCache();
 
 /**
  * Cached empty pattern matcher (avoids creating new function each call).
@@ -130,50 +197,55 @@ const validateBracePattern = (pattern: string): void => {
 };
 
 /**
- * Evict oldest cache entries if cache exceeds max size.
- * Simple LRU-style eviction - removes first (oldest) entries.
+ * Options for matcher functions.
  */
-const evictIfNeeded = (): void => {
-  if (matcherCache.size >= MAX_CACHE_SIZE) {
-    // Remove oldest 10% of entries
-    const toRemove = Math.floor(MAX_CACHE_SIZE * 0.1);
-    const keys = matcherCache.keys();
-    for (let i = 0; i < toRemove; i++) {
-      const key = keys.next().value;
-      if (key !== undefined) {
-        matcherCache.delete(key);
-      }
-    }
-  }
-};
+export interface MatcherOptions {
+  /**
+   * Custom cache instance for isolated caching.
+   * If not provided, uses the default module-level cache.
+   *
+   * **Thread Safety**: Use isolated cache instances when working with
+   * Web Workers or Bun worker threads to avoid race conditions.
+   *
+   * @example
+   * ```ts
+   * const cache = new MatcherCache();
+   * const matcher = createMatcher("*.ts", { cache });
+   * ```
+   */
+  cache?: MatcherCache;
+}
 
 /**
  * Get or create a cached matcher for a pattern.
  * - Handles empty pattern specially (only matches empty string)
  * - Normalizes pattern before caching
- * - Evicts old entries if cache is full
+ * - Uses provided cache or default module-level cache
  */
-const getCachedMatcher = (pattern: string): ((path: string) => boolean) => {
+const getCachedMatcher = (
+  pattern: string,
+  options?: MatcherOptions,
+): ((path: string) => boolean) => {
   // Handle empty pattern - use pre-allocated matcher
   if (pattern === "") {
     return EMPTY_PATTERN_MATCHER;
   }
 
+  // Use provided cache or default
+  const cache = options?.cache ?? defaultMatcherCache;
+
   // Normalize pattern (remove trailing slash, normalize unicode)
   const normalizedPattern = normalizePattern(pattern);
 
   // Check cache first
-  let matcher = matcherCache.get(normalizedPattern);
+  let matcher = cache.get(normalizedPattern);
   if (matcher) {
     return matcher;
   }
 
-  // Evict old entries if needed before adding new one
-  evictIfNeeded();
-
   // Compile and cache
   matcher = picomatch(normalizedPattern, MATCH_OPTIONS);
-  matcherCache.set(normalizedPattern, matcher);
+  cache.set(normalizedPattern, matcher);
   return matcher;
 };
 
@@ -181,17 +253,28 @@ const getCachedMatcher = (pattern: string): ((path: string) => boolean) => {
  * Create a matcher function for one or more glob patterns.
  * Matchers are cached for performance when checking many paths.
  *
+ * @param patterns - Glob pattern(s) to match against
+ * @param options - Optional matcher options (e.g., custom cache for thread safety)
+ *
  * @example
  * ```ts
+ * // Default: uses shared module-level cache
  * const isTypeScript = createMatcher(["*.ts", "*.tsx"]);
  * isTypeScript("file.ts");  // true
  * isTypeScript("file.js");  // false
+ *
+ * // Thread-safe: isolated cache
+ * const cache = new MatcherCache();
+ * const matcher = createMatcher("*.ts", { cache });
  * ```
  */
-export const createMatcher = (patterns: string | readonly string[]): Matcher => {
+export const createMatcher = (
+  patterns: string | readonly string[],
+  options?: MatcherOptions,
+): Matcher => {
   const list = Array.isArray(patterns) ? patterns : [patterns];
   if (list.length === 0) return () => false;
-  const matchers = list.map((p) => getCachedMatcher(p));
+  const matchers = list.map((p) => getCachedMatcher(p, options));
   return (path: string) => {
     const normalized = normalizePath(path);
     return matchers.some((m) => m(normalized));
@@ -202,35 +285,57 @@ export const createMatcher = (patterns: string | readonly string[]): Matcher => 
  * Check if a path matches a glob pattern.
  * Normalizes the path for cross-platform compatibility (Windows backslashes → forward slashes).
  *
+ * @param path - File path to test
+ * @param pattern - Glob pattern to match against
+ * @param options - Optional matcher options (e.g., custom cache for thread safety)
+ *
  * @example
  * ```ts
  * matches("src/file.ts", "src/*.ts");     // true
  * matches("src/sub/file.ts", "src/*.ts"); // false - * doesn't cross /
  * matches("src/sub/file.ts", "src/**");   // true - ** crosses /
+ *
+ * // Thread-safe usage
+ * const cache = new MatcherCache();
+ * matches("file.ts", "*.ts", { cache });
  * ```
  */
-export const matches = (path: string, pattern: string): boolean => {
+export const matches = (path: string, pattern: string, options?: MatcherOptions): boolean => {
   const normalized = normalizePath(path);
-  return getCachedMatcher(pattern)(normalized);
+  return getCachedMatcher(pattern, options)(normalized);
 };
 
 /**
  * Effect wrapper for matches().
  */
-export const matchesEffect = (path: string, pattern: string): Effect.Effect<boolean> =>
-  Effect.succeed(matches(path, pattern));
+export const matchesEffect = (
+  path: string,
+  pattern: string,
+  options?: MatcherOptions,
+): Effect.Effect<boolean> => Effect.succeed(matches(path, pattern, options));
 
 /**
  * Check if a path matches any of the given patterns.
+ *
+ * @param path - File path to test
+ * @param patterns - Array of glob patterns to match against
+ * @param options - Optional matcher options (e.g., custom cache for thread safety)
  *
  * @example
  * ```ts
  * matchesAny("file.ts", ["*.ts", "*.tsx"]); // true
  * matchesAny("file.js", ["*.ts", "*.tsx"]); // false
+ *
+ * // Thread-safe usage
+ * const cache = new MatcherCache();
+ * matchesAny("file.ts", ["*.ts", "*.tsx"], { cache });
  * ```
  */
-export const matchesAny = (path: string, patterns: readonly string[]): boolean =>
-  patterns.length > 0 && createMatcher(patterns)(path);
+export const matchesAny = (
+  path: string,
+  patterns: readonly string[],
+  options?: MatcherOptions,
+): boolean => patterns.length > 0 && createMatcher(patterns, options)(path);
 
 /**
  * Effect wrapper for matchesAny().
@@ -238,7 +343,8 @@ export const matchesAny = (path: string, patterns: readonly string[]): boolean =
 export const matchesAnyEffect = (
   path: string,
   patterns: readonly string[],
-): Effect.Effect<boolean> => Effect.succeed(matchesAny(path, patterns));
+  options?: MatcherOptions,
+): Effect.Effect<boolean> => Effect.succeed(matchesAny(path, patterns, options));
 
 /**
  * Expand simple brace patterns like `*.{ts,tsx}` into multiple patterns.
@@ -266,6 +372,10 @@ export const expandBraces = (pattern: string): readonly string[] => {
  * Match a name against a pattern with brace expansion support.
  * Useful for patterns like `*.{ts,tsx}` in layout definitions.
  *
+ * @param name - File name to test
+ * @param pattern - Glob pattern with optional brace expansion
+ * @param options - Optional matcher options (e.g., custom cache for thread safety)
+ *
  * @throws Error if nested braces are detected in the pattern
  *
  * @example
@@ -273,12 +383,20 @@ export const expandBraces = (pattern: string): readonly string[] => {
  * matchesWithBraces("file.ts", "*.{ts,tsx}");  // true
  * matchesWithBraces("file.tsx", "*.{ts,tsx}"); // true
  * matchesWithBraces("file.js", "*.{ts,tsx}");  // false
+ *
+ * // Thread-safe usage
+ * const cache = new MatcherCache();
+ * matchesWithBraces("file.ts", "*.{ts,tsx}", { cache });
  * ```
  */
-export const matchesWithBraces = (name: string, pattern: string): boolean => {
+export const matchesWithBraces = (
+  name: string,
+  pattern: string,
+  options?: MatcherOptions,
+): boolean => {
   const expanded = expandBraces(pattern);
   const normalized = normalizePath(name);
-  return expanded.some((p) => getCachedMatcher(p)(normalized));
+  return expanded.some((p) => getCachedMatcher(p, options)(normalized));
 };
 
 /**
@@ -355,18 +473,27 @@ export const joinPath = (...parts: readonly string[]): string => {
 export const normalizeUnicode = (s: string): string => s.normalize("NFC");
 
 /**
- * Clear the matcher cache. Useful for testing or when patterns change.
+ * Clear the default matcher cache. Useful for testing or when patterns change.
+ *
+ * **Note**: This only clears the default module-level cache. If you're using
+ * custom cache instances, clear them separately using `cache.clear()`.
  */
 export const clearMatcherCache = (): void => {
-  matcherCache.clear();
+  defaultMatcherCache.clear();
 };
 
 /**
- * Get current cache size. Useful for monitoring/debugging.
+ * Get current size of the default matcher cache. Useful for monitoring/debugging.
+ *
+ * **Note**: This only returns the size of the default module-level cache.
+ * For custom cache instances, use `cache.size`.
  */
-export const getMatcherCacheSize = (): number => matcherCache.size;
+export const getMatcherCacheSize = (): number => defaultMatcherCache.size;
 
 /**
- * Get the maximum cache size limit.
+ * Get the maximum cache size limit for the default cache.
+ *
+ * **Note**: This returns the limit for the default module-level cache.
+ * For custom cache instances, use `cache.limit`.
  */
-export const getMaxCacheSize = (): number => MAX_CACHE_SIZE;
+export const getMaxCacheSize = (): number => defaultMatcherCache.limit;
