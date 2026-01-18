@@ -15,6 +15,9 @@ const LOCK_FILE = ".lock";
 /** Maximum time to wait for lock acquisition in milliseconds */
 const LOCK_TIMEOUT_MS = 5000;
 
+/** Consider a lock stale if it hasn't been updated in this time (2x timeout to avoid false positives) */
+const LOCK_STALE_MS = LOCK_TIMEOUT_MS * 2;
+
 /** Retry interval when waiting for lock in milliseconds */
 const LOCK_RETRY_INTERVAL_MS = 50;
 
@@ -78,23 +81,23 @@ const acquireLock = (root: string): Effect.Effect<boolean, never, never> =>
           await fd.close();
 
           return true;
-        } catch (_error) {
-          // Lock file exists, check if we've timed out
-          if (Date.now() - startTime > LOCK_TIMEOUT_MS) {
-            // Check if lock is stale (older than timeout)
-            try {
-              const { stat, unlink } = await import("node:fs/promises");
-              const stats = await stat(lockPath);
-              if (Date.now() - stats.mtimeMs > LOCK_TIMEOUT_MS) {
-                // Stale lock, remove it and retry
-                await unlink(lockPath);
-                continue;
-              }
-            } catch {
-              // Lock file disappeared, retry
+        } catch {
+          // Lock file exists, check if it's stale before checking timeout
+          try {
+            const { stat, unlink } = await import("node:fs/promises");
+            const stats = await stat(lockPath);
+            if (Date.now() - stats.mtimeMs > LOCK_STALE_MS) {
+              // Stale lock, remove it and retry
+              await unlink(lockPath);
               continue;
             }
+          } catch {
+            // Lock file disappeared, retry
+            continue;
+          }
 
+          // Check if we've timed out
+          if (Date.now() - startTime > LOCK_TIMEOUT_MS) {
             // Give up after timeout
             return false;
           }

@@ -172,6 +172,9 @@ describe("cache race condition protection", () => {
   });
 
   test("handles stale lock files", async () => {
+    // Clean up from previous tests
+    await rm(join(testDir, ".repo-lint-cache"), { recursive: true, force: true });
+
     const files = makeFiles(["src/a.ts"]);
     const fileHash = computeFileHash(files);
     const configContent = "mode: strict";
@@ -193,25 +196,36 @@ describe("cache race condition protection", () => {
     // Verify cache was written
     const cached = await Effect.runPromise(readCache(testDir, configContent, fileHash));
     expect(Option.isSome(cached)).toBe(true);
-  });
+  }, 10000);
 
   test("does not release lock that was not acquired", async () => {
+    // Clean up from previous tests
+    await rm(join(testDir, ".repo-lint-cache"), { recursive: true, force: true });
+
     const files = makeFiles(["src/a.ts"]);
     const fileHash = computeFileHash(files);
     const configContent = "mode: strict";
 
     // Create a lock file that won't be stale
-    const { mkdir, writeFile } = await import("node:fs/promises");
+    const { mkdir, writeFile, readFile, access } = await import("node:fs/promises");
     const lockPath = join(testDir, ".repo-lint-cache", ".lock");
     await mkdir(join(testDir, ".repo-lint-cache"), { recursive: true });
     await writeFile(lockPath, "99999", { flag: "w" });
+
+    // Verify lock file was created
+    const lockCreated = await readFile(lockPath, "utf-8");
+    expect(lockCreated).toBe("99999");
 
     // Attempt to write - should timeout and not delete the lock file
     await Effect.runPromise(writeCache(testDir, configContent, fileHash, files.length, emptyResult));
 
     // Verify lock file still exists with original content
-    const { readFile } = await import("node:fs/promises");
-    const lockContent = await readFile(lockPath, "utf-8");
-    expect(lockContent).toBe("99999");
-  });
+    try {
+      await access(lockPath);
+      const lockContent = await readFile(lockPath, "utf-8");
+      expect(lockContent).toBe("99999");
+    } catch (error) {
+      throw new Error(`Lock file should still exist but got: ${error}`);
+    }
+  }, 10000);
 });
