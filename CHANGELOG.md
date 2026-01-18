@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Race condition in cache read/write operations ([#7](https://github.com/Rika-Labs/repo-lint/issues/7))
+  - Added file-based locking mechanism to prevent concurrent cache access
+  - Implemented atomic write operations (write to temp file, then rename)
+  - Added lock timeout and stale lock detection (5 second timeout)
+  - Prevents cache corruption in parallel CI/CD environments and monorepo setups
+
 - **BREAKING**: Fixed glob pattern matching so `*` no longer matches across path separators ([#3](https://github.com/Rika-Labs/repo-lint/pull/3))
   - Previously, `modules/*` would incorrectly match `modules/chat/stream`
   - Now, `modules/*` only matches `modules/chat` (single segment)
