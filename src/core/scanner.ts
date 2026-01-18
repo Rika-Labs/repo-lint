@@ -163,7 +163,9 @@ const scanDirectory = (
   Effect.gen(function* () {
     // Check max depth
     if (currentDepth > ctx.maxDepth) {
-      return [];
+      return yield* Effect.fail(
+        new MaxDepthExceededError({ path: dir, depth: currentDepth, maxDepth: ctx.maxDepth })
+      );
     }
 
     const rel = normalizePath(relative(ctx.root, dir));
