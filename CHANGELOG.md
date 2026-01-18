@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `MaxDepthExceededError` is now properly thrown when directory depth exceeds `maxDepth` limit instead of silently returning empty array ([#5](https://github.com/Rika-Labs/repo-lint/issues/5))
+
 - **BREAKING**: Fixed glob pattern matching so `*` no longer matches across path separators ([#3](https://github.com/Rika-Labs/repo-lint/pull/3))
   - Previously, `modules/*` would incorrectly match `modules/chat/stream`
   - Now, `modules/*` only matches `modules/chat` (single segment)

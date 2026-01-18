@@ -1,6 +1,7 @@
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
-import { Effect, Exit, Option } from "effect";
+import { Effect, Exit, Option, Cause } from "effect";
 import { scan, fileExists, readFileContent } from "../src/core/scanner.js";
+import { MaxDepthExceededError } from "../src/errors.js";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -149,6 +150,52 @@ describe("scan", () => {
 
     // Should only have top-level entries
     expect(files.every((f) => f.depth <= 2)).toBe(true);
+  });
+
+  test("throws MaxDepthExceededError when depth limit is exceeded", async () => {
+    // Create a deeply nested directory structure
+    const deepTestDir = join(tmpdir(), `repo-lint-deep-test-${Date.now()}`);
+    await mkdir(deepTestDir, { recursive: true });
+
+    // Create a directory structure deeper than maxDepth
+    let currentPath = deepTestDir;
+    for (let i = 0; i < 5; i++) {
+      currentPath = join(currentPath, `level${i}`);
+      await mkdir(currentPath, { recursive: true });
+      await writeFile(join(currentPath, "file.txt"), `level ${i}`);
+    }
+
+    try {
+      const exit = await Effect.runPromiseExit(
+        scan({
+          root: deepTestDir,
+          ignore: [],
+          scope: Option.none(),
+          useGitignore: Option.some(false),
+          maxDepth: Option.some(2),
+          maxFiles: Option.none(),
+          followSymlinks: Option.none(),
+          timeout: Option.none(),
+          concurrency: Option.none(),
+        }),
+      );
+
+      expect(Exit.isFailure(exit)).toBe(true);
+
+      if (Exit.isFailure(exit)) {
+        const failure = Cause.failureOption(exit.cause);
+        expect(Option.isSome(failure)).toBe(true);
+        if (Option.isSome(failure)) {
+          const error = failure.value;
+          // The error will be wrapped in ScanError, so we need to check the cause
+          expect(error._tag).toBe("ScanError");
+          // Verify the underlying cause is MaxDepthExceededError
+          expect(error.cause).toBeInstanceOf(MaxDepthExceededError);
+        }
+      }
+    } finally {
+      await rm(deepTestDir, { recursive: true, force: true });
+    }
   });
 });
 
