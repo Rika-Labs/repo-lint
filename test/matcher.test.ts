@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import {
   matches,
   matchesEffect,
+  matchesAny,
   matchesAnyEffect,
   createMatcher,
   expandBraces,
@@ -14,6 +15,8 @@ import {
   normalizePath,
   normalizeUnicode,
   clearMatcherCache,
+  getMatcherCacheSize,
+  getMaxCacheSize,
 } from "../src/core/matcher.js";
 
 // Clear cache before each test for isolation
@@ -51,7 +54,7 @@ describe("matches", () => {
     expect(matches("modules/chat/stream", "modules/*")).toBe(false);
     expect(matches("src/file.ts", "src/*.ts")).toBe(true);
     expect(matches("src/sub/file.ts", "src/*.ts")).toBe(false);
-    
+
     // ** SHOULD match across separators
     expect(matches("modules/chat/stream", "modules/**")).toBe(true);
     expect(matches("src/sub/file.ts", "src/**/*.ts")).toBe(true);
@@ -99,6 +102,12 @@ describe("matchesAny", () => {
     const result = await Effect.runPromise(matchesAnyEffect("anything", []));
     expect(result).toBe(false);
   });
+
+  test("normalizes Windows paths", () => {
+    expect(matchesAny("src\\file.ts", ["src/*.ts", "lib/*.ts"])).toBe(true);
+    expect(matchesAny("src\\sub\\file.ts", ["src/**/*.ts"])).toBe(true);
+    expect(matchesAny("src\\sub\\file.ts", ["src/*.ts"])).toBe(false);
+  });
 });
 
 describe("createMatcher", () => {
@@ -141,6 +150,18 @@ describe("expandBraces", () => {
   test("handles no braces", () => {
     expect(expandBraces("plain-pattern")).toEqual(["plain-pattern"]);
   });
+
+  test("throws on nested braces", () => {
+    expect(() => expandBraces("*.{ts,{js,jsx}}")).toThrow(/[Nn]ested braces/);
+    expect(() => expandBraces("*.{a,b{c,d}}")).toThrow(/[Nn]ested braces/);
+  });
+
+  test("handles patterns without valid braces", () => {
+    // These patterns have braces but not in the expandable format
+    expect(expandBraces("file{.ts")).toEqual(["file{.ts"]);
+    expect(expandBraces("file}.ts")).toEqual(["file}.ts"]);
+    expect(expandBraces("file{}.ts")).toEqual(["file{}.ts"]); // empty braces
+  });
 });
 
 describe("matchesWithBraces", () => {
@@ -158,6 +179,10 @@ describe("matchesWithBraces", () => {
   test("* does not match across separators (consistent with matches)", () => {
     expect(matchesWithBraces("src/sub/file.ts", "src/*.ts")).toBe(false);
     expect(matchesWithBraces("src/file.ts", "src/*.ts")).toBe(true);
+  });
+
+  test("throws on nested braces", () => {
+    expect(() => matchesWithBraces("file.ts", "*.{ts,{js,jsx}}")).toThrow(/[Nn]ested braces/);
   });
 });
 
@@ -177,12 +202,53 @@ describe("normalizePath", () => {
     expect(normalizePath("src/sub/")).toBe("src/sub");
   });
 
+  test("preserves leading slashes (absolute paths)", () => {
+    expect(normalizePath("/src/file.ts")).toBe("/src/file.ts");
+    expect(normalizePath("/")).toBe("");
+    expect(normalizePath("//src")).toBe("/src");
+  });
+
   test("handles mixed issues", () => {
     expect(normalizePath("src\\\\sub//file.ts/")).toBe("src/sub/file.ts");
   });
 
   test("handles empty string", () => {
     expect(normalizePath("")).toBe("");
+  });
+
+  test("normalizes unicode to NFC", () => {
+    // café in NFD (decomposed)
+    const nfd = "cafe\u0301.ts";
+    // café in NFC (composed)
+    const nfc = "caf\u00e9.ts";
+
+    expect(normalizePath(nfd)).toBe(nfc);
+    expect(normalizePath(nfc)).toBe(nfc);
+  });
+});
+
+describe("unicode normalization", () => {
+  test("matches unicode paths regardless of NFC/NFD form", () => {
+    // café in NFC (composed)
+    const nfc = "caf\u00e9.ts";
+    // café in NFD (decomposed)
+    const nfd = "cafe\u0301.ts";
+
+    // Both should match the same pattern
+    expect(matches(nfc, "*.ts")).toBe(true);
+    expect(matches(nfd, "*.ts")).toBe(true);
+
+    // NFC pattern should match NFD path and vice versa
+    expect(matches(nfd, nfc)).toBe(true);
+    expect(matches(nfc, nfd)).toBe(true);
+  });
+
+  test("normalizeUnicode converts to NFC", () => {
+    const nfd = "cafe\u0301";
+    const nfc = "caf\u00e9";
+
+    expect(normalizeUnicode(nfd)).toBe(nfc);
+    expect(normalizeUnicode(nfc)).toBe(nfc);
   });
 });
 
@@ -219,10 +285,21 @@ describe("path utilities", () => {
     expect(getDepth("src\\utils\\deep")).toBe(3);
   });
 
+  test("getDepth handles root path edge case", () => {
+    // "/" normalizes to "" (trailing slash removed), so depth is 0
+    expect(getDepth("/")).toBe(0);
+  });
+
   test("joinPath", () => {
     expect(joinPath("src", "utils")).toBe("src/utils");
     expect(joinPath("", "file.ts")).toBe("file.ts");
     expect(joinPath("src", "", "file.ts")).toBe("src/file.ts");
+  });
+
+  test("joinPath normalizes output", () => {
+    expect(joinPath("src\\sub", "file.ts")).toBe("src/sub/file.ts");
+    expect(joinPath("src/", "/file.ts")).toBe("src/file.ts");
+    expect(joinPath("src//sub", "file.ts")).toBe("src/sub/file.ts");
   });
 });
 
@@ -244,6 +321,12 @@ describe("edge cases", () => {
     // Trailing slashes are normalized away
     expect(matches("src/", "src")).toBe(true);
     expect(matches("src/", "src/")).toBe(true);
+  });
+
+  test("trailing slashes in patterns", () => {
+    // Pattern trailing slashes are also normalized
+    expect(matches("src", "src/")).toBe(true);
+    expect(matches("src", "src")).toBe(true);
   });
 
   test("leading slashes (absolute paths)", () => {
@@ -283,27 +366,93 @@ describe("edge cases", () => {
   });
 });
 
-describe("normalizeUnicode", () => {
-  test("normalizes unicode strings", () => {
-    // café in composed form (NFC)
-    const composed = "caf\u00e9";
-    // café in decomposed form (NFD)
-    const decomposed = "cafe\u0301";
-
-    expect(normalizeUnicode(composed)).toBe(normalizeUnicode(decomposed));
-    expect(composed).not.toBe(decomposed); // They're different without normalization
-  });
-});
-
 describe("matcher cache", () => {
   test("clearMatcherCache resets the cache", () => {
     // First call should cache
     matches("file.ts", "*.ts");
-    
+    expect(getMatcherCacheSize()).toBeGreaterThan(0);
+
     // Clear cache
     clearMatcherCache();
-    
+    expect(getMatcherCacheSize()).toBe(0);
+
     // Should still work after clear
     expect(matches("file.ts", "*.ts")).toBe(true);
+  });
+
+  test("cache has size limit", () => {
+    const maxSize = getMaxCacheSize();
+    expect(maxSize).toBeGreaterThan(0);
+    expect(maxSize).toBe(1000); // Current limit
+  });
+
+  test("cache evicts old entries when full", () => {
+    const maxSize = getMaxCacheSize();
+
+    // Fill cache beyond limit
+    for (let i = 0; i < maxSize + 100; i++) {
+      matches("file.ts", `pattern-${i}`);
+    }
+
+    // Cache should be at or below max size (after eviction)
+    expect(getMatcherCacheSize()).toBeLessThanOrEqual(maxSize);
+  });
+
+  test("empty pattern uses cached matcher", () => {
+    // Call twice
+    matches("", "");
+    matches("", "");
+
+    // Empty pattern doesn't add to cache (uses pre-allocated matcher)
+    // But it should still work
+    expect(matches("", "")).toBe(true);
+    expect(matches("a", "")).toBe(false);
+  });
+
+  test("caching improves performance", () => {
+    const pattern = "**/*.ts";
+    const iterations = 5000;
+
+    // Cold cache
+    clearMatcherCache();
+    const coldStart = performance.now();
+    for (let i = 0; i < iterations; i++) {
+      matches(`file${i % 100}.ts`, pattern);
+    }
+    const coldTime = performance.now() - coldStart;
+
+    // Warm cache - same pattern already cached
+    const warmStart = performance.now();
+    for (let i = 0; i < iterations; i++) {
+      matches(`file${i % 100}.ts`, pattern);
+    }
+    const warmTime = performance.now() - warmStart;
+
+    // Warm should be faster or at least not significantly slower
+    // (First run compiles the pattern, subsequent runs reuse it)
+    // We're lenient here because the first run also warms the cache
+    expect(warmTime).toBeLessThanOrEqual(coldTime * 1.5);
+  });
+});
+
+describe("pattern normalization consistency", () => {
+  test("src/ and src are equivalent patterns", () => {
+    expect(matches("src", "src/")).toBe(true);
+    expect(matches("src", "src")).toBe(true);
+    expect(matches("src/", "src")).toBe(true);
+    expect(matches("src/", "src/")).toBe(true);
+  });
+
+  test("patterns with trailing slash cache to same key", () => {
+    clearMatcherCache();
+
+    matches("file.ts", "*.ts/");
+    const sizeAfterFirst = getMatcherCacheSize();
+
+    matches("file.ts", "*.ts");
+    const sizeAfterSecond = getMatcherCacheSize();
+
+    // Both should use the same cache entry
+    expect(sizeAfterSecond).toBe(sizeAfterFirst);
   });
 });

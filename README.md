@@ -135,6 +135,38 @@ pattern: "src/modules/*"
 
 Dotfiles (`.gitignore`, `.env`, etc.) are matched by default.
 
+### Absolute vs Relative Paths
+
+Leading slashes are preserved. An absolute path `/src/file.ts` will NOT match a relative pattern `src/*.ts`:
+
+```yaml
+# Relative pattern - matches relative paths only
+pattern: "src/*.ts"
+# ✓ matches: src/file.ts
+# ✗ does NOT match: /src/file.ts
+
+# Absolute pattern - matches absolute paths only  
+pattern: "/src/*.ts"
+# ✓ matches: /src/file.ts
+# ✗ does NOT match: src/file.ts
+```
+
+### Unicode Normalization
+
+Paths and patterns are automatically normalized to Unicode NFC form. This ensures that `café.ts` matches regardless of whether it's stored as composed (NFC) or decomposed (NFD) Unicode.
+
+### Brace Expansion
+
+Simple brace patterns are supported, but nested braces are NOT:
+
+```yaml
+# ✓ Supported
+pattern: "*.{ts,tsx}"  # Expands to *.ts and *.tsx
+
+# ✗ NOT supported (throws error)
+pattern: "*.{ts,{js,jsx}}"  # Use multiple patterns instead
+```
+
 ## Match Rules
 
 Match rules let you target specific directory patterns and enforce structure requirements without defining the entire filesystem layout tree. This is especially useful for monorepos where you only care about structure in certain directories.

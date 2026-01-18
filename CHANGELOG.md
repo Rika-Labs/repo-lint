@@ -14,15 +14,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Now, `modules/*` only matches `modules/chat` (single segment)
   - Use `**` to match across path separators: `modules/**` matches `modules/chat/stream`
 
+- Unicode paths now match correctly regardless of NFC/NFD normalization
+  - `café.ts` (composed) now matches `café.ts` (decomposed)
+
+- `joinPath()` now normalizes its output (Windows backslashes → forward slashes)
+
+- `expandBraces()` now throws an error on nested braces instead of returning garbage patterns
+
 ### Changed
 
 - All matcher functions now normalize Windows paths (backslashes → forward slashes)
-- Added matcher cache for improved performance when checking many files against the same pattern
+- All paths and patterns are now Unicode-normalized to NFC form
+- Added LRU-style matcher cache with 1000 pattern limit (prevents memory leaks)
 - `matchesWithBraces` now uses the same options as `matches` for consistent behavior
 
 ### Added
 
 - `clearMatcherCache()` function for testing and cache invalidation
+- `getMatcherCacheSize()` function for monitoring cache size
+- `getMaxCacheSize()` function to get the cache limit
 - `normalizePath()` is now exported for external use
 - Comprehensive JSDoc documentation for all matcher functions
 
@@ -40,6 +50,19 @@ match:
   - pattern: "src/**"  # Use ** to match across directories
   # OR
   - pattern: "src/*"   # Now correctly matches only src/a, src/b, etc.
+```
+
+If you used nested braces in patterns, split them into multiple patterns:
+
+```yaml
+# Before (would silently produce garbage)
+pattern: "*.{ts,{js,jsx}}"
+
+# After (explicit and correct)
+patterns:
+  - "*.ts"
+  - "*.js" 
+  - "*.jsx"
 ```
 
 ## [1.1.0] - 2026-01-17

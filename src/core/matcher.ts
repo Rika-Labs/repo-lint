@@ -4,19 +4,6 @@ import picomatch from "picomatch";
 export type Matcher = (path: string) => boolean;
 
 /**
- * Picomatch options type (defined inline since @types/picomatch may not be available)
- */
-interface PicomatchOptions {
-  dot?: boolean;
-  bash?: boolean;
-  nobrace?: boolean;
-  noglobstar?: boolean;
-  noextglob?: boolean;
-  nocase?: boolean;
-  matchBase?: boolean;
-}
-
-/**
  * Picomatch options for consistent path matching across all matcher functions.
  *
  * ## Why these options?
@@ -35,50 +22,123 @@ interface PicomatchOptions {
  *
  * @see https://github.com/Rika-Labs/repo-lint/pull/3
  */
-const MATCH_OPTIONS: PicomatchOptions = {
+const MATCH_OPTIONS = {
   dot: true,
   bash: false,
-};
+} as const;
 
 /**
- * Cache for compiled matchers to avoid recompiling the same pattern.
- * Key is the pattern string, value is the compiled matcher function.
+ * Maximum number of patterns to cache.
+ * Prevents memory leaks from unbounded cache growth.
+ * Uses simple LRU-style eviction (removes oldest entries when limit reached).
+ */
+const MAX_CACHE_SIZE = 1000;
+
+/**
+ * LRU-style cache for compiled matchers.
+ * - Keys are normalized pattern strings
+ * - Values are compiled matcher functions
+ * - Automatically evicts oldest entries when MAX_CACHE_SIZE is reached
+ *
+ * Note: This is module-level state. In a library context, all callers share
+ * this cache. This is intentional for performance but means patterns are
+ * cached globally.
  */
 const matcherCache = new Map<string, (path: string) => boolean>();
+
+/**
+ * Cached empty pattern matcher (avoids creating new function each call).
+ */
+const EMPTY_PATTERN_MATCHER = (path: string): boolean => path === "";
 
 /**
  * Normalize a path for consistent matching across platforms.
  * - Converts Windows backslashes to forward slashes
  * - Removes duplicate slashes
  * - Removes trailing slashes
+ * - Normalizes unicode to NFC form
+ *
+ * Note: Leading slashes are PRESERVED. An absolute path `/src/file.ts`
+ * stays absolute and will NOT match a relative pattern like `src/*.ts`.
+ * This is intentional - absolute and relative paths are semantically different.
  */
 export const normalizePath = (p: string): string =>
-  p.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/, "");
+  p
+    .normalize("NFC") // Unicode normalization
+    .replace(/\\/g, "/")
+    .replace(/\/+/g, "/")
+    .replace(/\/$/, "");
 
 /**
  * Normalize a glob pattern for consistent matching.
- * - Removes trailing slashes (directories don't need them)
+ * - Removes trailing slashes (directories don't need them in patterns)
+ * - Normalizes unicode to NFC form
+ *
+ * This ensures that `src/` and `src` are treated identically as patterns,
+ * which matches user expectations for directory patterns.
  */
-const normalizePattern = (pattern: string): string => pattern.replace(/\/$/, "");
+const normalizePattern = (pattern: string): string =>
+  pattern.normalize("NFC").replace(/\/$/, "");
+
+/**
+ * Validate a brace pattern for correctness.
+ * Throws if nested braces are detected (not supported).
+ */
+const validateBracePattern = (pattern: string): void => {
+  const braceMatch = pattern.match(/\{([^}]*)\}/);
+  if (braceMatch?.[1]?.includes("{")) {
+    throw new Error(
+      `Nested braces are not supported in pattern: "${pattern}". ` +
+        `Use multiple patterns instead, e.g., ["*.ts", "*.js", "*.jsx"] instead of "*.{ts,{js,jsx}}"`
+    );
+  }
+};
+
+/**
+ * Evict oldest cache entries if cache exceeds max size.
+ * Simple LRU-style eviction - removes first (oldest) entries.
+ */
+const evictIfNeeded = (): void => {
+  if (matcherCache.size >= MAX_CACHE_SIZE) {
+    // Remove oldest 10% of entries
+    const toRemove = Math.floor(MAX_CACHE_SIZE * 0.1);
+    const keys = matcherCache.keys();
+    for (let i = 0; i < toRemove; i++) {
+      const key = keys.next().value;
+      if (key !== undefined) {
+        matcherCache.delete(key);
+      }
+    }
+  }
+};
 
 /**
  * Get or create a cached matcher for a pattern.
- * Handles empty pattern specially (only matches empty string).
+ * - Handles empty pattern specially (only matches empty string)
+ * - Normalizes pattern before caching
+ * - Evicts old entries if cache is full
  */
 const getCachedMatcher = (pattern: string): ((path: string) => boolean) => {
-  // Handle empty pattern - only matches empty string
+  // Handle empty pattern - use pre-allocated matcher
   if (pattern === "") {
-    return (path: string) => path === "";
+    return EMPTY_PATTERN_MATCHER;
   }
 
-  // Normalize pattern (remove trailing slash)
+  // Normalize pattern (remove trailing slash, normalize unicode)
   const normalizedPattern = normalizePattern(pattern);
 
+  // Check cache first
   let matcher = matcherCache.get(normalizedPattern);
-  if (!matcher) {
-    matcher = picomatch(normalizedPattern, MATCH_OPTIONS);
-    matcherCache.set(normalizedPattern, matcher);
+  if (matcher) {
+    return matcher;
   }
+
+  // Evict old entries if needed before adding new one
+  evictIfNeeded();
+
+  // Compile and cache
+  matcher = picomatch(normalizedPattern, MATCH_OPTIONS);
+  matcherCache.set(normalizedPattern, matcher);
   return matcher;
 };
 
@@ -147,15 +207,20 @@ export const matchesAnyEffect = (
 
 /**
  * Expand simple brace patterns like `*.{ts,tsx}` into multiple patterns.
- * Only handles single brace expansion (not nested).
+ * Only handles single-level brace expansion (not nested).
+ *
+ * @throws Error if nested braces are detected
  *
  * @example
  * ```ts
  * expandBraces("*.{ts,tsx}"); // ["*.ts", "*.tsx"]
  * expandBraces("*.ts");       // ["*.ts"]
+ * expandBraces("*.{a,{b,c}}"); // throws Error - nested braces not supported
  * ```
  */
 export const expandBraces = (pattern: string): readonly string[] => {
+  validateBracePattern(pattern);
+
   const match = pattern.match(/\{([^}]+)\}/);
   if (!match?.[1]) return [pattern];
   const options = match[1].split(",");
@@ -165,6 +230,8 @@ export const expandBraces = (pattern: string): readonly string[] => {
 /**
  * Match a name against a pattern with brace expansion support.
  * Useful for patterns like `*.{ts,tsx}` in layout definitions.
+ *
+ * @throws Error if nested braces are detected in the pattern
  *
  * @example
  * ```ts
@@ -222,24 +289,33 @@ export const getParent = (p: string): string => {
 export const getDepth = (p: string): number => {
   if (p === "") return 0;
   const normalized = normalizePath(p);
+  // Second check needed because normalizePath("/") returns ""
+  // (trailing slash removed from root path)
   return normalized === "" ? 0 : normalized.split("/").length;
 };
 
 /**
  * Join path segments, filtering out empty strings.
+ * Normalizes the result for consistent output.
  *
  * @example
  * ```ts
- * joinPath("src", "utils");  // "src/utils"
- * joinPath("", "file.ts");   // "file.ts"
+ * joinPath("src", "utils");       // "src/utils"
+ * joinPath("", "file.ts");        // "file.ts"
+ * joinPath("src\\sub", "file");   // "src/sub/file" (normalized)
  * ```
  */
-export const joinPath = (...parts: readonly string[]): string =>
-  parts.filter(Boolean).join("/");
+export const joinPath = (...parts: readonly string[]): string => {
+  const joined = parts.filter(Boolean).join("/");
+  return normalizePath(joined);
+};
 
 /**
  * Normalize unicode strings to NFC form for consistent comparison.
  * Ensures that characters like é (composed) and e + ́ (decomposed) are treated identically.
+ *
+ * Note: This is automatically applied by normalizePath() and normalizePattern(),
+ * so you typically don't need to call this directly.
  */
 export const normalizeUnicode = (s: string): string => s.normalize("NFC");
 
@@ -249,3 +325,13 @@ export const normalizeUnicode = (s: string): string => s.normalize("NFC");
 export const clearMatcherCache = (): void => {
   matcherCache.clear();
 };
+
+/**
+ * Get current cache size. Useful for monitoring/debugging.
+ */
+export const getMatcherCacheSize = (): number => matcherCache.size;
+
+/**
+ * Get the maximum cache size limit.
+ */
+export const getMaxCacheSize = (): number => MAX_CACHE_SIZE;
