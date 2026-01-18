@@ -189,6 +189,8 @@ describe("scan", () => {
           const error = failure.value;
           // The error will be wrapped in ScanError, so we need to check the cause
           expect(error._tag).toBe("ScanError");
+          // Verify the underlying cause is MaxDepthExceededError
+          expect(error.cause).toBeInstanceOf(MaxDepthExceededError);
         }
       }
     } finally {
