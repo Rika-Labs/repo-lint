@@ -555,6 +555,36 @@ describe("MatcherCache class", () => {
     expect(cache.size).toBeLessThanOrEqual(10);
   });
 
+  test("small cache sizes (1-9) evict at least 1 entry", () => {
+    // Test cache sizes where Math.floor(size * 0.1) would be 0
+    for (let maxSize = 1; maxSize <= 9; maxSize++) {
+      const cache = new MatcherCache(maxSize);
+
+      // Fill to capacity
+      for (let i = 0; i < maxSize; i++) {
+        matches("file.ts", `pattern-${i}`, { cache });
+      }
+      expect(cache.size).toBe(maxSize);
+
+      // Add one more - should evict at least 1 entry
+      matches("file.ts", `pattern-overflow`, { cache });
+      expect(cache.size).toBeLessThanOrEqual(maxSize);
+    }
+  });
+
+  test("cache size 1 maintains exactly 1 entry", () => {
+    const cache = new MatcherCache(1);
+
+    matches("file.ts", "pattern-1", { cache });
+    expect(cache.size).toBe(1);
+
+    matches("file.ts", "pattern-2", { cache });
+    expect(cache.size).toBe(1);
+
+    matches("file.ts", "pattern-3", { cache });
+    expect(cache.size).toBe(1);
+  });
+
   test("cache.clear() clears isolated cache", () => {
     const cache = new MatcherCache();
     matches("file.ts", "*.ts", { cache });

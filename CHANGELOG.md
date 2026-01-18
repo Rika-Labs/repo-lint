@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Default behavior unchanged (uses shared module-level cache for performance)
   - Isolated caches can now be created for Web Workers or Bun worker threads
   - Prominently documented thread-safety limitations
+- Fixed cache eviction for small cache sizes (1-9) - now evicts at least 1 entry when at capacity
 
 ## [2.0.0] - 2026-01-18
 

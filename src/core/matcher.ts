@@ -84,8 +84,8 @@ export class MatcherCache {
 
   private evictIfNeeded(): void {
     if (this.cache.size >= this.maxSize) {
-      // Remove oldest 10% of entries
-      const toRemove = Math.floor(this.maxSize * 0.1);
+      // Remove oldest 10% of entries, but at least 1 entry
+      const toRemove = Math.max(1, Math.floor(this.maxSize * 0.1));
       const keys = this.cache.keys();
       for (let i = 0; i < toRemove; i++) {
         const key = keys.next().value;
