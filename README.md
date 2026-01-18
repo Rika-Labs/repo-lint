@@ -93,6 +93,82 @@ repo-lint check --sarif
 
 Run `repo-lint --help` for full documentation.
 
+## Match Rules
+
+Match rules let you target specific directory patterns and enforce structure requirements without defining the entire filesystem layout tree. This is especially useful for monorepos where you only care about structure in certain directories.
+
+### Basic Example
+
+```yaml
+rules:
+  match:
+    - pattern: "apps/*/api/src/modules/*"
+      require: [controller.ts, service.ts, repo.ts]
+      allow: [errors.ts, lib]
+      strict: true
+      case: kebab
+```
+
+### Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `pattern` | `string` | Glob pattern to match directories (required) |
+| `exclude` | `string[]` | Patterns to exclude from matching |
+| `require` | `string[]` | Required files/directories that must exist |
+| `allow` | `string[]` | Allowed entries (used with `strict: true`) |
+| `forbid` | `string[]` | Forbidden files/directories |
+| `strict` | `boolean` | Only `require` + `allow` entries permitted |
+| `case` | `string` | Naming convention for matched directory (`kebab`, `snake`, `camel`, `pascal`) |
+| `childCase` | `string` | Naming convention for children of matched directories |
+
+### Use Cases
+
+**API module structure:**
+```yaml
+rules:
+  match:
+    - pattern: "apps/*/api/src/modules/*"
+      require: [controller.ts, service.ts, repo.ts]
+      allow: [errors.ts, lib, "*.ts"]
+      strict: true
+      case: kebab  # module directories must be kebab-case
+```
+
+**React component directories:**
+```yaml
+rules:
+  match:
+    - pattern: "src/components/*"
+      require: [index.tsx]
+      case: pascal      # Component dirs: Button, UserCard
+      childCase: kebab  # Files inside: index.tsx, styles.css
+```
+
+**Forbid test files in production code:**
+```yaml
+rules:
+  match:
+    - pattern: "src/**/*"
+      forbid: ["*.test.ts", "*.spec.ts", "__tests__"]
+```
+
+**Exclude specific directories:**
+```yaml
+rules:
+  match:
+    - pattern: "apps/*/modules/*"
+      exclude: ["apps/legacy/*", "apps/*/modules/deprecated"]
+      require: [index.ts]
+```
+
+### Behavior Notes
+
+- **Pattern matches nothing:** A warning is emitted if the pattern doesn't match any directories (likely config typo)
+- **Strict mode with no patterns:** If `strict: true` but no `require`/`allow`, ALL entries are rejected
+- **Overlapping rules:** If multiple rules match the same directory, ALL rules are applied
+- **`case` vs `childCase`:** `case` validates the matched directory name; `childCase` validates its children
+
 ## Claude Code
 
 Add filesystem linting to Claude Code:

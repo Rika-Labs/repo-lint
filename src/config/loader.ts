@@ -80,6 +80,7 @@ const mergeRules = (base: Rules | undefined, override: Rules | undefined): Rules
     dependencies: { ...base?.dependencies, ...override?.dependencies },
     mirror: [...(base?.mirror ?? []), ...(override?.mirror ?? [])],
     when: { ...base?.when, ...override?.when },
+    match: [...(base?.match ?? []), ...(override?.match ?? [])],
   };
 
   if (boundaries !== undefined) {
@@ -203,6 +204,7 @@ const RULE_KEYS = new Set([
   "mirror",
   "when",
   "boundaries",
+  "match",
 ]);
 
 const SCAN_KEYS = new Set([
