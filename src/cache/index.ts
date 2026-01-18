@@ -55,11 +55,11 @@ const getTempCachePath = (root: string): string => join(root, CACHE_DIR, "cache.
 
 /**
  * Acquire a lock on the cache directory
- * Returns an Effect that succeeds when the lock is acquired
+ * Returns an Effect that resolves to true if lock was acquired, false if timed out
  */
-const acquireLock = (root: string): Effect.Effect<void, never, never> =>
+const acquireLock = (root: string): Effect.Effect<boolean, never, never> =>
   Effect.tryPromise({
-    try: async () => {
+    try: async (): Promise<boolean> => {
       const lockPath = getLockPath(root);
       const startTime = Date.now();
 
@@ -77,7 +77,7 @@ const acquireLock = (root: string): Effect.Effect<void, never, never> =>
           await fd.write(String(process.pid));
           await fd.close();
 
-          return;
+          return true;
         } catch (_error) {
           // Lock file exists, check if we've timed out
           if (Date.now() - startTime > LOCK_TIMEOUT_MS) {
@@ -96,7 +96,7 @@ const acquireLock = (root: string): Effect.Effect<void, never, never> =>
             }
 
             // Give up after timeout
-            return;
+            return false;
           }
 
           // Wait before retrying
@@ -104,8 +104,8 @@ const acquireLock = (root: string): Effect.Effect<void, never, never> =>
         }
       }
     },
-    catch: () => undefined,
-  }).pipe(Effect.catchAll(() => Effect.succeed(undefined)), Effect.asVoid);
+    catch: () => false,
+  }).pipe(Effect.catchAll(() => Effect.succeed(false)));
 
 /**
  * Release the lock on the cache directory
@@ -186,7 +186,12 @@ export const readCache = (
 ): Effect.Effect<Option.Option<CacheEntry>, never, never> =>
   Effect.gen(function* () {
     // Acquire lock before reading
-    yield* acquireLock(root);
+    const lockAcquired = yield* acquireLock(root);
+
+    // If lock acquisition failed, skip cache read
+    if (!lockAcquired) {
+      return Option.none<CacheEntry>();
+    }
 
     try {
       const result = yield* Effect.tryPromise({
@@ -209,7 +214,7 @@ export const readCache = (
 
       return result;
     } finally {
-      // Always release lock
+      // Only release lock if we acquired it
       yield* releaseLock(root);
     }
   }).pipe(Effect.catchAll(() => Effect.succeed(Option.none<CacheEntry>())));
@@ -226,7 +231,12 @@ export const writeCache = (
 ): Effect.Effect<void, never, never> =>
   Effect.gen(function* () {
     // Acquire lock before writing
-    yield* acquireLock(root);
+    const lockAcquired = yield* acquireLock(root);
+
+    // If lock acquisition failed, skip cache write
+    if (!lockAcquired) {
+      return;
+    }
 
     try {
       yield* Effect.tryPromise({
@@ -259,7 +269,7 @@ export const writeCache = (
         Effect.catchAll(() => Effect.succeed(undefined)),
       );
     } finally {
-      // Always release lock
+      // Only release lock if we acquired it
       yield* releaseLock(root);
     }
   }).pipe(

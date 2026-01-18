@@ -194,4 +194,24 @@ describe("cache race condition protection", () => {
     const cached = await Effect.runPromise(readCache(testDir, configContent, fileHash));
     expect(Option.isSome(cached)).toBe(true);
   });
+
+  test("does not release lock that was not acquired", async () => {
+    const files = makeFiles(["src/a.ts"]);
+    const fileHash = computeFileHash(files);
+    const configContent = "mode: strict";
+
+    // Create a lock file that won't be stale
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const lockPath = join(testDir, ".repo-lint-cache", ".lock");
+    await mkdir(join(testDir, ".repo-lint-cache"), { recursive: true });
+    await writeFile(lockPath, "99999", { flag: "w" });
+
+    // Attempt to write - should timeout and not delete the lock file
+    await Effect.runPromise(writeCache(testDir, configContent, fileHash, files.length, emptyResult));
+
+    // Verify lock file still exists with original content
+    const { readFile } = await import("node:fs/promises");
+    const lockContent = await readFile(lockPath, "utf-8");
+    expect(lockContent).toBe("99999");
+  });
 });
