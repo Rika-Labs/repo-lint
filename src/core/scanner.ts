@@ -161,13 +161,6 @@ const scanDirectory = (
   never
 > =>
   Effect.gen(function* () {
-    // Check max depth
-    if (currentDepth > ctx.maxDepth) {
-      return yield* Effect.fail(
-        new MaxDepthExceededError({ path: dir, depth: currentDepth, maxDepth: ctx.maxDepth })
-      );
-    }
-
     const rel = normalizePath(relative(ctx.root, dir));
 
     // Read local .gitignore if enabled
@@ -239,6 +232,11 @@ const scanDirectory = (
         });
         if (currentDepth < ctx.maxDepth) {
           subdirs.push({ path: fullPath, depth, patterns: localPatterns });
+        } else {
+          // We're at maxDepth and found a subdirectory - this exceeds the limit
+          yield* Effect.fail(
+            new MaxDepthExceededError({ path: fullPath, depth, maxDepth: ctx.maxDepth })
+          );
         }
       } else if (entry.isFile()) {
         const meta = getFileMeta(fullPath);
