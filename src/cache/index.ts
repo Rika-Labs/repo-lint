@@ -9,6 +9,18 @@ const CACHE_DIR = ".repo-lint-cache";
 /** Cache format version - increment when cache structure changes */
 const CACHE_VERSION = "2";
 
+/** Lock file name */
+const LOCK_FILE = ".lock";
+
+/** Maximum time to wait for lock acquisition in milliseconds */
+const LOCK_TIMEOUT_MS = 5000;
+
+/** Consider a lock stale if it hasn't been updated in this time (2x timeout to avoid false positives) */
+const LOCK_STALE_MS = LOCK_TIMEOUT_MS * 2;
+
+/** Retry interval when waiting for lock in milliseconds */
+const LOCK_RETRY_INTERVAL_MS = 50;
+
 /** Default cache TTL: 1 hour in milliseconds */
 const DEFAULT_CACHE_TTL_MS = 60 * 60 * 1000;
 
@@ -33,6 +45,83 @@ const hashString = (str: string): string => {
  * Get the path to the cache file for a given root
  */
 const getCachePath = (root: string): string => join(root, CACHE_DIR, "cache.json");
+
+/**
+ * Get the path to the lock file for a given root
+ */
+const getLockPath = (root: string): string => join(root, CACHE_DIR, LOCK_FILE);
+
+/**
+ * Get the path to the temporary cache file for atomic writes
+ */
+const getTempCachePath = (root: string): string => join(root, CACHE_DIR, "cache.json.tmp");
+
+/**
+ * Acquire a lock on the cache directory
+ * Returns an Effect that resolves to true if lock was acquired, false if timed out
+ */
+const acquireLock = (root: string): Effect.Effect<boolean, never, never> =>
+  Effect.tryPromise({
+    try: async (): Promise<boolean> => {
+      const lockPath = getLockPath(root);
+      const startTime = Date.now();
+
+      // Ensure cache directory exists
+      const { mkdir } = await import("node:fs/promises");
+      await mkdir(join(root, CACHE_DIR), { recursive: true });
+
+      while (true) {
+        try {
+          // Try to create lock file exclusively
+          const { open } = await import("node:fs/promises");
+          const fd = await open(lockPath, "wx");
+
+          // Write process ID to lock file for debugging
+          await fd.write(String(process.pid));
+          await fd.close();
+
+          return true;
+        } catch {
+          // Lock file exists, check if it's stale before checking timeout
+          try {
+            const { stat, unlink } = await import("node:fs/promises");
+            const stats = await stat(lockPath);
+            if (Date.now() - stats.mtimeMs > LOCK_STALE_MS) {
+              // Stale lock, remove it and retry
+              await unlink(lockPath);
+              continue;
+            }
+          } catch {
+            // Lock file disappeared, retry
+            continue;
+          }
+
+          // Check if we've timed out
+          if (Date.now() - startTime > LOCK_TIMEOUT_MS) {
+            // Give up after timeout
+            return false;
+          }
+
+          // Wait before retrying
+          await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_INTERVAL_MS));
+        }
+      }
+    },
+    catch: () => false,
+  }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+
+/**
+ * Release the lock on the cache directory
+ */
+const releaseLock = (root: string): Effect.Effect<void, never, never> =>
+  Effect.tryPromise({
+    try: async () => {
+      const lockPath = getLockPath(root);
+      const { unlink } = await import("node:fs/promises");
+      await unlink(lockPath);
+    },
+    catch: () => undefined,
+  }).pipe(Effect.catchAll(() => Effect.succeed(undefined)), Effect.asVoid);
 
 /**
  * Compute a deterministic hash of the scanned file list
@@ -98,23 +187,40 @@ export const readCache = (
   fileHash: string,
   maxAgeMs: number = DEFAULT_CACHE_TTL_MS,
 ): Effect.Effect<Option.Option<CacheEntry>, never, never> =>
-  Effect.tryPromise({
-    try: async () => {
-      const cachePath = getCachePath(root);
-      const content = await Bun.file(cachePath).text();
-      const entry = JSON.parse(content) as CacheEntry;
+  Effect.gen(function* () {
+    // Acquire lock before reading
+    const lockAcquired = yield* acquireLock(root);
 
-      if (!validateCacheEntry(entry, root, configContent, fileHash, maxAgeMs)) {
-        return Option.none<CacheEntry>();
-      }
+    // If lock acquisition failed, skip cache read
+    if (!lockAcquired) {
+      return Option.none<CacheEntry>();
+    }
 
-      return Option.some(entry);
-    },
-    catch: () => Option.none<CacheEntry>(),
-  }).pipe(
-    Effect.timeout(Duration.millis(1000)),
-    Effect.catchAll(() => Effect.succeed(Option.none<CacheEntry>())),
-  );
+    try {
+      const result = yield* Effect.tryPromise({
+        try: async () => {
+          const cachePath = getCachePath(root);
+          const content = await Bun.file(cachePath).text();
+          const entry = JSON.parse(content) as CacheEntry;
+
+          if (!validateCacheEntry(entry, root, configContent, fileHash, maxAgeMs)) {
+            return Option.none<CacheEntry>();
+          }
+
+          return Option.some(entry);
+        },
+        catch: () => Option.none<CacheEntry>(),
+      }).pipe(
+        Effect.timeout(Duration.millis(1000)),
+        Effect.catchAll(() => Effect.succeed(Option.none<CacheEntry>())),
+      );
+
+      return result;
+    } finally {
+      // Only release lock if we acquired it
+      yield* releaseLock(root);
+    }
+  }).pipe(Effect.catchAll(() => Effect.succeed(Option.none<CacheEntry>())));
 
 /**
  * Write check result to cache
@@ -126,28 +232,50 @@ export const writeCache = (
   filesCount: number,
   result: CheckResult,
 ): Effect.Effect<void, never, never> =>
-  Effect.tryPromise({
-    try: async () => {
-      const cachePath = getCachePath(root);
-      const entry: CacheEntry = {
-        version: CACHE_VERSION,
-        root,
-        configHash: hashString(configContent),
-        fileHash,
-        filesCount,
-        result,
-        timestamp: Date.now(),
-      };
+  Effect.gen(function* () {
+    // Acquire lock before writing
+    const lockAcquired = yield* acquireLock(root);
 
-      // Ensure cache directory exists
-      const { mkdir } = await import("node:fs/promises");
-      await mkdir(join(root, CACHE_DIR), { recursive: true });
+    // If lock acquisition failed, skip cache write
+    if (!lockAcquired) {
+      return;
+    }
 
-      await Bun.write(cachePath, JSON.stringify(entry));
-    },
-    catch: () => undefined,
+    try {
+      yield* Effect.tryPromise({
+        try: async () => {
+          const cachePath = getCachePath(root);
+          const tempPath = getTempCachePath(root);
+          const entry: CacheEntry = {
+            version: CACHE_VERSION,
+            root,
+            configHash: hashString(configContent),
+            fileHash,
+            filesCount,
+            result,
+            timestamp: Date.now(),
+          };
+
+          // Ensure cache directory exists
+          const { mkdir, rename } = await import("node:fs/promises");
+          await mkdir(join(root, CACHE_DIR), { recursive: true });
+
+          // Write to temporary file first
+          await Bun.write(tempPath, JSON.stringify(entry));
+
+          // Atomically rename temp file to cache file
+          await rename(tempPath, cachePath);
+        },
+        catch: () => undefined,
+      }).pipe(
+        Effect.timeout(Duration.millis(1000)),
+        Effect.catchAll(() => Effect.succeed(undefined)),
+      );
+    } finally {
+      // Only release lock if we acquired it
+      yield* releaseLock(root);
+    }
   }).pipe(
-    Effect.timeout(Duration.millis(1000)),
     Effect.catchAll(() => Effect.succeed(undefined)),
     Effect.asVoid,
   );

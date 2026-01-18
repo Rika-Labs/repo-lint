@@ -1,17 +1,9 @@
 import { Option } from "effect";
 import type { OutputFormat } from "../output/index.js";
 import type { InspectType } from "../commands/inspect.js";
+import type { ScanOverrides } from "../types/index.js";
 
 export type Command = "check" | "inspect" | "help" | "version";
-
-export type ScanOverrides = {
-  readonly maxDepth: Option.Option<number>;
-  readonly maxFiles: Option.Option<number>;
-  readonly timeoutMs: Option.Option<number>;
-  readonly concurrency: Option.Option<number>;
-  readonly followSymlinks: Option.Option<boolean>;
-  readonly useGitignore: Option.Option<boolean>;
-};
 
 export type ParsedArgs = {
   readonly command: Command;

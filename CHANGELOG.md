@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Race condition in cache read/write operations ([#7](https://github.com/Rika-Labs/repo-lint/issues/7))
+  - Added file-based locking mechanism to prevent concurrent cache access
+  - Implemented atomic write operations (write to temp file, then rename)
+  - Added lock timeout (5 second) and stale lock detection (10 second)
+  - Check for stale locks on every retry attempt instead of only after timeout
+  - Prevents cache corruption in parallel CI/CD environments and monorepo setups
+
 - `MaxDepthExceededError` is now properly thrown when directory depth exceeds `maxDepth` limit instead of silently returning empty array ([#5](https://github.com/Rika-Labs/repo-lint/issues/5))
 
 - **BREAKING**: Fixed glob pattern matching so `*` no longer matches across path separators ([#3](https://github.com/Rika-Labs/repo-lint/pull/3))
