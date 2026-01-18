@@ -3,15 +3,22 @@ import picomatch from "picomatch";
 
 export type Matcher = (path: string) => boolean;
 
+/**
+ * Picomatch options for path matching.
+ * - dot: true - match dotfiles (.gitignore, .env, etc.)
+ * - bash: false - ensure * doesn't match across path separators (use ** for that)
+ */
+const MATCH_OPTIONS = { dot: true, bash: false } as const;
+
 export const createMatcher = (patterns: string | readonly string[]): Matcher => {
   const list = Array.isArray(patterns) ? patterns : [patterns];
   if (list.length === 0) return () => false;
-  const matchers = list.map((p) => picomatch(p, { dot: true, bash: true }));
+  const matchers = list.map((p) => picomatch(p, MATCH_OPTIONS));
   return (path: string) => matchers.some((m) => m(path));
 };
 
 export const matches = (path: string, pattern: string): boolean =>
-  picomatch(pattern, { dot: true, bash: true })(path);
+  picomatch(pattern, MATCH_OPTIONS)(path);
 
 export const matchesEffect = (path: string, pattern: string): Effect.Effect<boolean> =>
   Effect.succeed(matches(path, pattern));
@@ -33,7 +40,7 @@ export const expandBraces = (pattern: string): readonly string[] => {
 
 export const matchesWithBraces = (name: string, pattern: string): boolean => {
   const expanded = expandBraces(pattern);
-  return expanded.some((p) => picomatch(p, { dot: true })(name));
+  return expanded.some((p) => picomatch(p, MATCH_OPTIONS)(name));
 };
 
 export const normalizePath = (p: string): string =>
