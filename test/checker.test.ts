@@ -277,3 +277,166 @@ describe("summary", () => {
     expect(result.summary.duration).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe("match rules", () => {
+  test("validates required files in matched directories", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [
+          {
+            pattern: "apps/*/api/src/modules/*",
+            require: ["controller.ts", "service.ts", "repo.ts"],
+          },
+        ],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "apps/sentinel/api/src/modules/user",
+        "apps/sentinel/api/src/modules/user/controller.ts",
+        "apps/sentinel/api/src/modules/user/service.ts",
+        // Missing repo.ts
+      ]),
+    );
+
+    expect(result.violations.filter((v) => v.rule === "match").length).toBe(1);
+    expect(result.violations[0]?.message).toContain("repo.ts");
+  });
+
+  test("passes when all required files exist", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [
+          {
+            pattern: "apps/*/api/src/modules/*",
+            require: ["controller.ts", "service.ts", "repo.ts"],
+          },
+        ],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "apps/sentinel/api/src/modules/user",
+        "apps/sentinel/api/src/modules/user/controller.ts",
+        "apps/sentinel/api/src/modules/user/service.ts",
+        "apps/sentinel/api/src/modules/user/repo.ts",
+      ]),
+    );
+
+    expect(result.violations.filter((v) => v.rule === "match").length).toBe(0);
+  });
+
+  test("validates strict mode - rejects unlisted files", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [
+          {
+            pattern: "modules/*",
+            require: ["controller.ts"],
+            allow: ["service.ts"],
+            strict: true,
+          },
+        ],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "modules/user",
+        "modules/user/controller.ts",
+        "modules/user/service.ts",
+        "modules/user/unauthorized.ts", // Not in require or allow
+      ]),
+    );
+
+    const matchViolations = result.violations.filter((v) => v.rule === "match");
+    expect(matchViolations.length).toBe(1);
+    expect(matchViolations[0]?.path).toContain("unauthorized.ts");
+  });
+
+  test("validates forbidden files", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [
+          {
+            pattern: "modules/*",
+            forbid: ["*.test.ts", "*.spec.ts"],
+          },
+        ],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "modules/user",
+        "modules/user/controller.ts",
+        "modules/user/controller.test.ts", // Forbidden
+      ]),
+    );
+
+    expect(result.violations.filter((v) => v.rule === "match").length).toBe(1);
+  });
+
+  test("validates case naming convention", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [
+          {
+            pattern: "modules/*",
+            case: "kebab",
+          },
+        ],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "modules/user",
+        "modules/user/myController.ts", // camelCase, not kebab
+      ]),
+    );
+
+    const matchViolations = result.violations.filter((v) => v.rule === "match");
+    expect(matchViolations.length).toBe(1);
+    expect(matchViolations[0]?.message).toContain("kebab");
+  });
+
+  test("respects exclude patterns", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [
+          {
+            pattern: "modules/*",
+            exclude: ["modules/special"],
+            require: ["controller.ts"],
+          },
+        ],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "modules/user",
+        "modules/user/controller.ts",
+        "modules/special", // Excluded - no controller required
+        "modules/special/custom.ts",
+      ]),
+    );
+
+    expect(result.violations.filter((v) => v.rule === "match").length).toBe(0);
+  });
+});

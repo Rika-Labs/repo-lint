@@ -8,6 +8,7 @@ import { checkDependencies } from "./dependencies.js";
 import { checkMirror } from "./mirror.js";
 import { checkWhen } from "./when.js";
 import { checkLayout } from "./layout.js";
+import { checkMatch } from "./match.js";
 
 export type { CheckContext } from "./context.js";
 
@@ -31,6 +32,7 @@ export const check = (
         checkDependencies(ctx),
         checkMirror(ctx),
         checkWhen(ctx),
+        checkMatch(ctx),
       ],
       { discard: true },
     );

@@ -170,6 +170,39 @@ export const BoundaryRule = Schema.Struct({
 });
 export type BoundaryRule = typeof BoundaryRule.Type;
 
+/**
+ * Match-based rules allow targeting specific directory patterns
+ * and enforcing structure requirements without defining the entire layout tree.
+ *
+ * @example
+ * ```yaml
+ * rules:
+ *   match:
+ *     - pattern: "apps/*\/api/src/modules/*"
+ *       require: [controller.ts, service.ts, repo.ts]
+ *       allow: [errors.ts, lib]
+ *       strict: true
+ *       case: kebab
+ * ```
+ */
+export const MatchRule = Schema.Struct({
+  /** Glob pattern to match directories */
+  pattern: Schema.String,
+  /** Patterns to exclude from matching */
+  exclude: Schema.optional(Schema.Array(Schema.String)),
+  /** Required files/directories that must exist */
+  require: Schema.optional(Schema.Array(Schema.String)),
+  /** Allowed files/directories (used with strict mode) */
+  allow: Schema.optional(Schema.Array(Schema.String)),
+  /** Forbidden files/directories */
+  forbid: Schema.optional(Schema.Array(Schema.String)),
+  /** If true, only required + allowed entries are permitted */
+  strict: Schema.optional(Schema.Boolean),
+  /** Enforce naming convention for entries */
+  case: Schema.optional(CaseStyle),
+});
+export type MatchRule = typeof MatchRule.Type;
+
 export const Rules = Schema.Struct({
   forbidPaths: Schema.optional(Schema.Array(Schema.String)),
   forbidNames: Schema.optional(Schema.Array(Schema.String)),
@@ -178,6 +211,7 @@ export const Rules = Schema.Struct({
   mirror: Schema.optional(Schema.Array(MirrorRule)),
   when: Schema.optional(WhenRule),
   boundaries: Schema.optional(BoundaryRule),
+  match: Schema.optional(Schema.Array(MatchRule)),
 });
 export type Rules = typeof Rules.Type;
 
