@@ -5,17 +5,8 @@ import { scan, scanWorkspaces, readFileContent } from "../core/scanner.js";
 import { check } from "../rules/index.js";
 import { format, type OutputFormat } from "../output/index.js";
 import { readCache, writeCache, computeFileHash } from "../cache/index.js";
-import type { CheckResult, RepoLintConfig } from "../types/index.js";
+import type { CheckResult, RepoLintConfig, ScanOverrides } from "../types/index.js";
 import { ConfigNotFoundError, ConfigParseError, ScanError, PathTraversalError } from "../errors.js";
-
-export type ScanOverrides = {
-  readonly maxDepth: Option.Option<number>;
-  readonly maxFiles: Option.Option<number>;
-  readonly timeoutMs: Option.Option<number>;
-  readonly concurrency: Option.Option<number>;
-  readonly followSymlinks: Option.Option<boolean>;
-  readonly useGitignore: Option.Option<boolean>;
-};
 
 export type CheckOptions = {
   readonly scope: Option.Option<string>;
