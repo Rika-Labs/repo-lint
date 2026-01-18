@@ -93,6 +93,48 @@ repo-lint check --sarif
 
 Run `repo-lint --help` for full documentation.
 
+## Glob Patterns
+
+Repo-lint uses [picomatch](https://github.com/micromatch/picomatch) for pattern matching with the following behavior:
+
+### Pattern Syntax
+
+| Pattern | Matches | Does NOT Match |
+|---------|---------|----------------|
+| `*` | Single path segment | Paths with `/` |
+| `**` | Zero or more path segments | — |
+| `?` | Single character | Multiple chars |
+| `[abc]` | One of a, b, c | Other chars |
+| `{a,b}` | Either a or b | Other values |
+| `!pattern` | Negation | — |
+
+### Important: `*` vs `**`
+
+```yaml
+# * matches ONE segment only
+pattern: "modules/*"
+# ✓ matches: modules/chat, modules/user
+# ✗ does NOT match: modules/chat/stream
+
+# ** matches ZERO OR MORE segments
+pattern: "modules/**"
+# ✓ matches: modules/chat, modules/chat/stream, modules/a/b/c
+```
+
+### Cross-Platform Paths
+
+Windows-style backslashes are automatically normalized to forward slashes:
+
+```yaml
+# This pattern works on both Windows and Unix
+pattern: "src/modules/*"
+# Matches: src\modules\chat (Windows) and src/modules/chat (Unix)
+```
+
+### Dotfiles
+
+Dotfiles (`.gitignore`, `.env`, etc.) are matched by default.
+
 ## Match Rules
 
 Match rules let you target specific directory patterns and enforce structure requirements without defining the entire filesystem layout tree. This is especially useful for monorepos where you only care about structure in certain directories.

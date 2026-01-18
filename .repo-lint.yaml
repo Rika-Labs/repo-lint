@@ -132,6 +132,8 @@ layout:
       optional: true
     "PLAN.md":
       optional: true
+    "CHANGELOG.md":
+      optional: true
     ".github":
       type: dir
       optional: true
