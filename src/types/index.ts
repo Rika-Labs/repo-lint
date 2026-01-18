@@ -1,4 +1,5 @@
 import { Schema } from "@effect/schema";
+import { Option } from "effect";
 
 // ============================================================================
 // Case Styles
@@ -230,6 +231,19 @@ export const ScanSettings = Schema.Struct({
   concurrency: Schema.optional(Schema.Number),
 });
 export type ScanSettings = typeof ScanSettings.Type;
+
+// ============================================================================
+// Scan Overrides (CLI Arguments)
+// ============================================================================
+
+export type ScanOverrides = {
+  readonly maxDepth: Option.Option<number>;
+  readonly maxFiles: Option.Option<number>;
+  readonly timeoutMs: Option.Option<number>;
+  readonly concurrency: Option.Option<number>;
+  readonly followSymlinks: Option.Option<boolean>;
+  readonly useGitignore: Option.Option<boolean>;
+};
 
 // ============================================================================
 // Main Config Schema
