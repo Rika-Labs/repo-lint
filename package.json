@@ -30,12 +30,14 @@
     "prepare": "husky"
   },
   "devDependencies": {
+    "@rikalabs/oxlint-standards": "github:Rika-Labs/oxlint-standards#v0.2.2",
     "@commitlint/cli": "^19.8.1",
     "@commitlint/config-conventional": "^19.8.1",
     "@types/bun": "latest",
     "husky": "^9.1.7",
     "knip": "^5.61.1",
     "oxlint": "^1.38.0",
+    "oxlint-tsgolint": "^0.17.0",
     "typescript": "^5.9.3"
   },
   "dependencies": {
@@ -43,5 +45,6 @@
     "effect": "^3.19.14",
     "picomatch": "^4.0.2",
     "yaml": "^2.7.0"
-  }
+  },
+  "trustedDependencies": ["@rikalabs/oxlint-standards"]
 }

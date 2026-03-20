@@ -3,6 +3,7 @@
   "entry": ["src/index.ts"],
   "project": ["src/**/*.ts"],
   "ignore": ["src/types/*.d.ts"],
+  "ignoreDependencies": ["@rikalabs/oxlint-standards"],
   "ignoreExportsUsedInFile": true,
   "ignoreBinaries": ["semantic-release"]
 }
