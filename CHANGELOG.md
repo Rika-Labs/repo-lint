@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-08-24
+
+### Added
+
+- `pathPrefix` rules for requiring file names to begin with their directory path beneath a declared
+  structural root
+- Monorepo and cross-platform path support for path-derived file name prefixes
+
+### Changed
+
+- Mirror rules now accept optional `exclude` glob patterns, allowing ordinary, TUI, and process test
+  suffixes to map independently without overlapping false positives
+
+### Fixed
+
+- Mirror target computation and lookup now normalize Windows-style paths
+
+## [2.1.3] - 2026-01-18
+
 ### Added
 
 - `MatcherCache` class for creating isolated matcher caches

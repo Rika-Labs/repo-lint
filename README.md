@@ -184,6 +184,67 @@ pattern: "*.{ts,tsx}"  # Expands to *.ts and *.tsx
 pattern: "*.{ts,{js,jsx}}"  # Use multiple patterns instead
 ```
 
+## Mirror Rules
+
+Mirror rules require one computed target file for every file matching `source`. The optional
+`exclude` list removes source matches before the target is computed, which lets overlapping file
+suffixes use separate mappings.
+
+```yaml
+rules:
+  mirror:
+    # Ordinary tests. Exclude the more specific lanes because *.test.ts matches all three.
+    - source: "test/**/*.test.ts"
+      target: "src/**/*.ts"
+      pattern: "*.test.ts -> *.ts"
+      exclude:
+        - "test/**/*.tui.test.ts"
+        - "test/**/*.proc.test.ts"
+
+    - source: "test/**/*.tui.test.ts"
+      target: "src/**/*.ts"
+      pattern: "*.tui.test.ts -> *.ts"
+
+    - source: "test/**/*.proc.test.ts"
+      target: "src/**/*.ts"
+      pattern: "*.proc.test.ts -> *.ts"
+```
+
+This maps all of these test files to `src/auth/auth-command.ts`:
+
+- `test/auth/auth-command.test.ts`
+- `test/auth/auth-command.tui.test.ts`
+- `test/auth/auth-command.proc.test.ts`
+
+`exclude` is optional, so existing mirror configurations keep their current behavior. Mirror rules
+are one-way: add a reverse rule separately if both directions must be enforced.
+
+## Path Prefix Rules
+
+`pathPrefix` requires each matched file name to start with its ancestor directories beneath a
+declared root, joined by `-`. Use one entry for each structural root:
+
+```yaml
+rules:
+  pathPrefix:
+    - pattern: "**/src/**/*.ts"
+      root: src
+    - pattern: "**/test/**/*.ts"
+      root: test
+```
+
+The leading `**/` makes the same rules work at the repository root and in monorepo packages. For a
+`src` root:
+
+- `src/auth/auth-command.ts` passes (`auth` prefix)
+- `src/auth/session/auth-session-command.ts` passes (`auth-session` prefix)
+- `src/auth/session/session-command.ts` fails
+- `src/index.ts` passes because it has no ancestor directory beneath `src`
+
+Test suffixes need no special configuration because the prefix is checked only at the start of the
+basename. `root` is a literal path segment; if it occurs more than once, the occurrence nearest the
+file is used. A matched file that does not contain the declared root is reported as a violation.
+
 ## Match Rules
 
 Match rules let you target specific directory patterns and enforce structure requirements without defining the entire filesystem layout tree. This is especially useful for monorepos where you only care about structure in certain directories.

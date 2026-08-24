@@ -1,6 +1,6 @@
 {
   "name": "@rikalabs/repo-lint",
-  "version": "0.5.0",
+  "version": "2.2.0",
   "description": "High-performance filesystem layout linter with YAML config",
   "keywords": ["lint", "architecture", "filesystem", "layout", "monorepo", "workspace", "bun"],
   "repository": {

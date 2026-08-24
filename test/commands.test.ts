@@ -148,4 +148,24 @@ describe("runInspect", () => {
     );
     expect(result).toBeUndefined();
   });
+
+  test("prints pathPrefix rule info without error", async () => {
+    await writeFile(
+      join(testDir, ".repo-lint.yaml"),
+      `rules:
+  pathPrefix:
+    - pattern: "src/**/*.ts"
+      root: src
+`,
+    );
+
+    const result = await Effect.runPromise(
+      runInspect({
+        type: "rule",
+        arg: Option.some("pathPrefix"),
+        configPath: Option.none(),
+      }),
+    );
+    expect(result).toBeUndefined();
+  });
 });

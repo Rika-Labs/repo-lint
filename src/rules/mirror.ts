@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import type { CheckContext } from "./context.js";
 import { addViolation } from "./context.js";
-import { matches } from "../core/matcher.js";
+import { matches, matchesAny, normalizePath } from "../core/matcher.js";
 import { RuleNames } from "../types/index.js";
 
 const extractPathSegments = (path: string, pattern: string): Map<string, string> | null => {
@@ -115,12 +115,16 @@ export const checkMirror = (ctx: CheckContext): Effect.Effect<void> =>
 
     for (const mirror of mirrors) {
       const sourceFiles = ctx.files.filter(
-        (f) => !f.isDirectory && matches(f.relativePath, mirror.source),
+        (f) =>
+          !f.isDirectory &&
+          matches(f.relativePath, mirror.source) &&
+          !matchesAny(f.relativePath, mirror.exclude ?? []),
       );
 
       for (const source of sourceFiles) {
+        const sourcePath = normalizePath(source.relativePath);
         const targetPath = buildTargetPath(
-          source.relativePath,
+          sourcePath,
           mirror.source,
           mirror.target,
           mirror.pattern,
@@ -128,7 +132,7 @@ export const checkMirror = (ctx: CheckContext): Effect.Effect<void> =>
 
         if (targetPath && !ctx.fileSet.has(targetPath)) {
           yield* addViolation(ctx, {
-            path: source.relativePath,
+            path: sourcePath,
             rule: RuleNames.Mirror,
             message: `missing mirrored file: ${targetPath}`,
             expected: targetPath,

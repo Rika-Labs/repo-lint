@@ -69,6 +69,31 @@ rules:
     expect(config.rules?.forbidNames).toContain("temp");
   });
 
+  test("loads mirror exclusions and path prefix rules", async () => {
+    const configDir = join(testDir, "relational-rules");
+    await mkdir(configDir, { recursive: true });
+    const configPath = join(configDir, "repo-lint.config.yaml");
+    await writeFile(
+      configPath,
+      `rules:
+  mirror:
+    - source: "test/**/*.test.ts"
+      target: "src/**/*.ts"
+      pattern: "*.test.ts -> *.ts"
+      exclude:
+        - "test/**/*.tui.test.ts"
+  pathPrefix:
+    - pattern: "src/**/*.ts"
+      root: src
+`,
+    );
+
+    const config = await Effect.runPromise(loadConfig(configPath));
+
+    expect(config.rules?.mirror?.[0]?.exclude).toEqual(["test/**/*.tui.test.ts"]);
+    expect(config.rules?.pathPrefix?.[0]).toEqual({ pattern: "src/**/*.ts", root: "src" });
+  });
+
   test("fails on invalid YAML", async () => {
     const configDir = join(testDir, "invalid-yaml");
     await mkdir(configDir, { recursive: true });

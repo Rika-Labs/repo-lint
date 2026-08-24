@@ -151,8 +151,15 @@ export const MirrorRule = Schema.Struct({
   source: Schema.String,
   target: Schema.String,
   pattern: Schema.optional(Schema.String),
+  exclude: Schema.optional(Schema.Array(Schema.String)),
 });
 export type MirrorRule = typeof MirrorRule.Type;
+
+export const PathPrefixRule = Schema.Struct({
+  pattern: Schema.String,
+  root: Schema.String,
+});
+export type PathPrefixRule = typeof PathPrefixRule.Type;
 
 export const WhenCondition = Schema.Struct({
   requires: Schema.Array(Schema.String),
@@ -213,6 +220,7 @@ export const Rules = Schema.Struct({
   ignorePaths: Schema.optional(Schema.Array(Schema.String)),
   dependencies: Schema.optional(DependencyRule),
   mirror: Schema.optional(Schema.Array(MirrorRule)),
+  pathPrefix: Schema.optional(Schema.Array(PathPrefixRule)),
   when: Schema.optional(WhenRule),
   boundaries: Schema.optional(BoundaryRule),
   match: Schema.optional(Schema.Array(MatchRule)),
@@ -317,6 +325,7 @@ export const RuleNames = {
   ForbidNames: "forbidNames",
   Dependencies: "dependencies",
   Mirror: "mirror",
+  PathPrefix: "pathPrefix",
   When: "when",
   Layout: "layout",
   Naming: "naming",

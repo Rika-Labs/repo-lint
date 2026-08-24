@@ -6,6 +6,7 @@ import { checkForbidPaths } from "./forbid-paths.js";
 import { checkForbidNames } from "./forbid-names.js";
 import { checkDependencies } from "./dependencies.js";
 import { checkMirror } from "./mirror.js";
+import { checkPathPrefix } from "./path-prefix.js";
 import { checkWhen } from "./when.js";
 import { checkLayout } from "./layout.js";
 import { checkMatch } from "./match.js";
@@ -31,6 +32,7 @@ export const check = (
         checkForbidNames(ctx),
         checkDependencies(ctx),
         checkMirror(ctx),
+        checkPathPrefix(ctx),
         checkWhen(ctx),
         checkMatch(ctx),
       ],

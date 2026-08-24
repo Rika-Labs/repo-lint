@@ -1,5 +1,6 @@
 import { Effect, Ref } from "effect";
 import type { RepoLintConfig, FileEntry, Violation, Severity } from "../types/index.js";
+import { normalizePath } from "../core/matcher.js";
 
 export type CheckContext = {
   readonly config: RepoLintConfig;
@@ -58,8 +59,12 @@ export const createContext = (
     return {
       config,
       files,
-      fileSet: new Set(files.filter((f) => !f.isDirectory).map((f) => f.relativePath)),
-      dirSet: new Set(files.filter((f) => f.isDirectory).map((f) => f.relativePath)),
+      fileSet: new Set(
+        files.filter((f) => !f.isDirectory).map((f) => normalizePath(f.relativePath)),
+      ),
+      dirSet: new Set(
+        files.filter((f) => f.isDirectory).map((f) => normalizePath(f.relativePath)),
+      ),
       violations: violationsRef,
       matched: matchedRef,
     };
