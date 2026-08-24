@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-08-24
+
+### Added
+
+- `noAncestorPrefix` rules for rejecting file names that redundantly repeat any ancestor directory
+  beneath a declared structural root
+- Optional `maxFiles` and `maxDirectories` limits for direct children of matched directories
+
+### Changed
+
+- Match-rule direct-child limits use the existing directory `exclude` semantics
+- Ancestor-prefix checks support normal and test-lane suffixes, file exclusions, monorepo globs,
+  Windows paths, and the nearest literal root segment
+
 ## [2.2.0] - 2026-08-24
 
 ### Added

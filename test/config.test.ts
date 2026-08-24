@@ -85,6 +85,14 @@ rules:
   pathPrefix:
     - pattern: "src/**/*.ts"
       root: src
+  noAncestorPrefix:
+    - pattern: "test/**/*.ts"
+      root: test
+      exclude: ["**/index.ts"]
+  match:
+    - pattern: "src/*"
+      maxFiles: 10
+      maxDirectories: 5
 `,
     );
 
@@ -92,6 +100,13 @@ rules:
 
     expect(config.rules?.mirror?.[0]?.exclude).toEqual(["test/**/*.tui.test.ts"]);
     expect(config.rules?.pathPrefix?.[0]).toEqual({ pattern: "src/**/*.ts", root: "src" });
+    expect(config.rules?.noAncestorPrefix?.[0]).toEqual({
+      pattern: "test/**/*.ts",
+      root: "test",
+      exclude: ["**/index.ts"],
+    });
+    expect(config.rules?.match?.[0]?.maxFiles).toBe(10);
+    expect(config.rules?.match?.[0]?.maxDirectories).toBe(5);
   });
 
   test("fails on invalid YAML", async () => {

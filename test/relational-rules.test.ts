@@ -211,3 +211,122 @@ describe("pathPrefix", () => {
     expect(violations[0]?.message).toContain('structural root "src" not found');
   });
 });
+
+describe("noAncestorPrefix", () => {
+  const config: RepoLintConfig = {
+    mode: "strict",
+    rules: {
+      noAncestorPrefix: [
+        { pattern: "**/src/**/*.ts", root: "src" },
+        { pattern: "**/test/**/*.ts", root: "test" },
+      ],
+    },
+  };
+
+  test("accepts contextual names and files directly under the root", async () => {
+    const result = await runCheck(config, [
+      "src/model-routing/behavior-mode.ts",
+      "src/release/update.ts",
+      "src/index.ts",
+      "test/model-routing/behavior-mode.test.ts",
+      "test/release/update.tui.test.ts",
+      "test/setup.proc.test.ts",
+    ]);
+
+    expect(
+      result.violations.filter((violation) => violation.rule === "noAncestorPrefix"),
+    ).toEqual([]);
+  });
+
+  test("rejects ancestor names and prefixes across normal and test suffixes", async () => {
+    const result = await runCheck(config, [
+      "src/release/release.ts",
+      "src/model-routing/model-routing-behavior-mode.ts",
+      "test/release/release.test.ts",
+      "test/release/release-update.tui.test.ts",
+      "test/model-routing/model-routing.proc.test.ts",
+    ]);
+    const violations = result.violations.filter(
+      (violation) => violation.rule === "noAncestorPrefix",
+    );
+
+    expect(violations).toHaveLength(5);
+    expect(violations.map((violation) => violation.got)).toEqual([
+      "release.ts",
+      "model-routing-behavior-mode.ts",
+      "release.test.ts",
+      "release-update.tui.test.ts",
+      "model-routing.proc.test.ts",
+    ]);
+  });
+
+  test("checks every ancestor below the root", async () => {
+    const result = await runCheck(config, [
+      "src/auth/session/auth-command.ts",
+      "src/auth/session/session.ts",
+      "src/auth/session/command.ts",
+    ]);
+    const violations = result.violations.filter(
+      (violation) => violation.rule === "noAncestorPrefix",
+    );
+
+    expect(violations).toHaveLength(2);
+    expect(violations.map((violation) => violation.message)).toEqual([
+      'file name must not repeat ancestor "auth"',
+      'file name must not repeat ancestor "session"',
+    ]);
+  });
+
+  test("respects file exclusions", async () => {
+    const excludeConfig: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        noAncestorPrefix: [
+          {
+            pattern: "**/src/**/*.ts",
+            root: "src",
+            exclude: ["**/*.generated.ts"],
+          },
+        ],
+      },
+    };
+
+    const result = await runCheck(excludeConfig, ["src/release/release.generated.ts"]);
+
+    expect(
+      result.violations.filter((violation) => violation.rule === "noAncestorPrefix"),
+    ).toEqual([]);
+  });
+
+  test("uses the nearest root segment and normalizes Windows paths", async () => {
+    const result = await runCheck(config, [
+      "packages\\src\\core\\src\\release\\core-update.test.ts",
+      "packages\\src\\core\\src\\release\\release-update.proc.test.ts",
+    ]);
+    const violations = result.violations.filter(
+      (violation) => violation.rule === "noAncestorPrefix",
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.path).toBe(
+      "packages/src/core/src/release/release-update.proc.test.ts",
+    );
+  });
+
+  test("reports a matched path without its declared root", async () => {
+    const invalidConfig: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        noAncestorPrefix: [{ pattern: "lib/**/*.ts", root: "src" }],
+      },
+    };
+
+    const result = await runCheck(invalidConfig, ["lib/release/update.ts"]);
+    const violations = result.violations.filter(
+      (violation) => violation.rule === "noAncestorPrefix",
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.message).toContain('structural root "src" not found');
+  });
+});

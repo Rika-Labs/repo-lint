@@ -418,6 +418,110 @@ describe("match rules", () => {
     expect(result.violations.filter((v) => v.rule === "match").length).toBe(0);
   });
 
+  test("limits direct child files without counting nested files", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [{ pattern: "modules/*", maxFiles: 2 }],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "modules/user",
+        "modules/user/one.ts",
+        "modules/user/two.ts",
+        "modules/user/three.ts",
+        "modules/user/nested",
+        "modules/user/nested/four.ts",
+      ]),
+    );
+    const violations = result.violations.filter((v) => v.rule === "match");
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.expected).toBe("at most 2 direct files");
+    expect(violations[0]?.got).toBe("3 direct files");
+  });
+
+  test("limits direct child directories without counting deeper directories", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [{ pattern: "modules/*", maxDirectories: 2 }],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "modules/user",
+        "modules/user/one",
+        "modules/user/one/deeper",
+        "modules/user/two",
+        "modules/user/three",
+      ]),
+    );
+    const violations = result.violations.filter((v) => v.rule === "match");
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.expected).toBe("at most 2 direct directories");
+    expect(violations[0]?.got).toBe("3 direct directories");
+  });
+
+  test("accepts direct child counts at both limits", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [{ pattern: "modules/*", maxFiles: 2, maxDirectories: 1 }],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "modules/user",
+        "modules/user/one.ts",
+        "modules/user/two.ts",
+        "modules/user/nested",
+      ]),
+    );
+
+    expect(result.violations.filter((v) => v.rule === "match")).toEqual([]);
+  });
+
+  test("does not apply direct child limits to excluded directories", async () => {
+    const config: RepoLintConfig = {
+      mode: "strict",
+      rules: {
+        match: [
+          {
+            pattern: "modules/*",
+            exclude: ["modules/legacy"],
+            maxFiles: 1,
+            maxDirectories: 1,
+          },
+        ],
+      },
+    };
+
+    const result = await runCheck(
+      config,
+      makeFiles([
+        "modules/user",
+        "modules/user/one.ts",
+        "modules/user/one",
+        "modules/legacy",
+        "modules/legacy/one.ts",
+        "modules/legacy/two.ts",
+        "modules/legacy/one",
+        "modules/legacy/two",
+      ]),
+    );
+
+    expect(result.violations.filter((v) => v.rule === "match")).toEqual([]);
+  });
+
   // =========================================================================
   // Case validation - directory name vs children
   // =========================================================================

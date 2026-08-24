@@ -245,6 +245,46 @@ Test suffixes need no special configuration because the prefix is checked only a
 basename. `root` is a literal path segment; if it occurs more than once, the occurrence nearest the
 file is used. A matched file that does not contain the declared root is reported as a violation.
 
+## No Ancestor Prefix Rules
+
+`noAncestorPrefix` prevents file names from repeating folder context. For each matched file, it
+rejects a name equal to an ancestor directory beneath `root` or beginning with `<ancestor>-`.
+
+```yaml
+rules:
+  noAncestorPrefix:
+    - pattern: "**/src/**/*.ts"
+      root: src
+      exclude:
+        - "**/*.generated.ts"
+    - pattern: "**/test/**/*.ts"
+      root: test
+```
+
+Each entry has this contract:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `pattern` | `string` | Glob selecting files to check (required) |
+| `root` | `string` | Literal structural-root path segment (required) |
+| `exclude` | `string[]` | File globs removed from the selected files |
+
+For a `src` root:
+
+- `src/model-routing/behavior-mode.ts` passes
+- `src/release/update.ts` passes
+- `src/model-routing/model-routing-behavior-mode.ts` fails
+- `src/release/release.ts` fails
+- `src/index.ts` passes because it has no ancestor beneath `src`
+
+The rule checks the stem before the first `.`, so the same behavior applies to normal files and test
+lanes such as `release.test.ts`, `release.tui.test.ts`, and `release.proc.test.ts`. If the literal
+root occurs more than once, the occurrence nearest the file is used. A matched file without the root
+is reported as a violation.
+
+`pathPrefix` and `noAncestorPrefix` express opposing naming policies; do not apply both to the same
+files.
+
 ## Match Rules
 
 Match rules let you target specific directory patterns and enforce structure requirements without defining the entire filesystem layout tree. This is especially useful for monorepos where you only care about structure in certain directories.
@@ -273,6 +313,8 @@ rules:
 | `strict` | `boolean` | Only `require` + `allow` entries permitted |
 | `case` | `string` | Naming convention for matched directory (`kebab`, `snake`, `camel`, `pascal`) |
 | `childCase` | `string` | Naming convention for children of matched directories |
+| `maxFiles` | `number` | Maximum number of direct child files |
+| `maxDirectories` | `number` | Maximum number of direct child directories |
 
 ### Use Cases
 
@@ -313,6 +355,19 @@ rules:
       exclude: ["apps/legacy/*", "apps/*/modules/deprecated"]
       require: [index.ts]
 ```
+
+**Limit direct children:**
+```yaml
+rules:
+  match:
+    - pattern: "**/src/*"
+      exclude: ["**/src/generated"]
+      maxFiles: 12
+      maxDirectories: 4
+```
+
+Only immediate children count toward these limits. Files and directories nested farther below a
+matched directory do not count, and excluded matched directories are not checked.
 
 ### Behavior Notes
 

@@ -7,6 +7,7 @@ import { checkForbidNames } from "./forbid-names.js";
 import { checkDependencies } from "./dependencies.js";
 import { checkMirror } from "./mirror.js";
 import { checkPathPrefix } from "./path-prefix.js";
+import { checkNoAncestorPrefix } from "./no-ancestor-prefix.js";
 import { checkWhen } from "./when.js";
 import { checkLayout } from "./layout.js";
 import { checkMatch } from "./match.js";
@@ -33,6 +34,7 @@ export const check = (
         checkDependencies(ctx),
         checkMirror(ctx),
         checkPathPrefix(ctx),
+        checkNoAncestorPrefix(ctx),
         checkWhen(ctx),
         checkMatch(ctx),
       ],

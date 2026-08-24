@@ -124,5 +124,6 @@ describe("types", () => {
     expect(RuleNames.Layout).toBe("layout");
     expect(RuleNames.Naming).toBe("naming");
     expect(RuleNames.PathPrefix).toBe("pathPrefix");
+    expect(RuleNames.NoAncestorPrefix).toBe("noAncestorPrefix");
   });
 });

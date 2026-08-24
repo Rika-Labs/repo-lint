@@ -168,4 +168,24 @@ describe("runInspect", () => {
     );
     expect(result).toBeUndefined();
   });
+
+  test("prints noAncestorPrefix rule info without error", async () => {
+    await writeFile(
+      join(testDir, ".repo-lint.yaml"),
+      `rules:
+  noAncestorPrefix:
+    - pattern: "src/**/*.ts"
+      root: src
+`,
+    );
+
+    const result = await Effect.runPromise(
+      runInspect({
+        type: "rule",
+        arg: Option.some("noAncestorPrefix"),
+        configPath: Option.none(),
+      }),
+    );
+    expect(result).toBeUndefined();
+  });
 });

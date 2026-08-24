@@ -161,6 +161,13 @@ export const PathPrefixRule = Schema.Struct({
 });
 export type PathPrefixRule = typeof PathPrefixRule.Type;
 
+export const NoAncestorPrefixRule = Schema.Struct({
+  pattern: Schema.String,
+  root: Schema.String,
+  exclude: Schema.optional(Schema.Array(Schema.String)),
+});
+export type NoAncestorPrefixRule = typeof NoAncestorPrefixRule.Type;
+
 export const WhenCondition = Schema.Struct({
   requires: Schema.Array(Schema.String),
 });
@@ -211,6 +218,10 @@ export const MatchRule = Schema.Struct({
   case: Schema.optional(CaseStyle),
   /** Enforce naming convention for children of matched directories */
   childCase: Schema.optional(CaseStyle),
+  /** Maximum number of direct child files */
+  maxFiles: Schema.optional(Schema.Number),
+  /** Maximum number of direct child directories */
+  maxDirectories: Schema.optional(Schema.Number),
 });
 export type MatchRule = typeof MatchRule.Type;
 
@@ -221,6 +232,7 @@ export const Rules = Schema.Struct({
   dependencies: Schema.optional(DependencyRule),
   mirror: Schema.optional(Schema.Array(MirrorRule)),
   pathPrefix: Schema.optional(Schema.Array(PathPrefixRule)),
+  noAncestorPrefix: Schema.optional(Schema.Array(NoAncestorPrefixRule)),
   when: Schema.optional(WhenRule),
   boundaries: Schema.optional(BoundaryRule),
   match: Schema.optional(Schema.Array(MatchRule)),
@@ -326,6 +338,7 @@ export const RuleNames = {
   Dependencies: "dependencies",
   Mirror: "mirror",
   PathPrefix: "pathPrefix",
+  NoAncestorPrefix: "noAncestorPrefix",
   When: "when",
   Layout: "layout",
   Naming: "naming",

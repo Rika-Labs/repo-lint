@@ -189,6 +189,32 @@ const checkMatchRule = (
   Effect.gen(function* () {
     const allEntries = getDirectChildren(node);
 
+    if (rule.maxFiles !== undefined && node.files.length > rule.maxFiles) {
+      const message = `directory has too many direct files (maximum ${rule.maxFiles})`;
+      if (!tracker.isDuplicate(node.path, RuleNames.Match, message)) {
+        yield* addViolation(ctx, {
+          path: node.path,
+          rule: RuleNames.Match,
+          message,
+          expected: `at most ${rule.maxFiles} direct files`,
+          got: `${node.files.length} direct files`,
+        });
+      }
+    }
+
+    if (rule.maxDirectories !== undefined && node.children.size > rule.maxDirectories) {
+      const message = `directory has too many direct directories (maximum ${rule.maxDirectories})`;
+      if (!tracker.isDuplicate(node.path, RuleNames.Match, message)) {
+        yield* addViolation(ctx, {
+          path: node.path,
+          rule: RuleNames.Match,
+          message,
+          expected: `at most ${rule.maxDirectories} direct directories`,
+          got: `${node.children.size} direct directories`,
+        });
+      }
+    }
+
     // Check naming convention on the matched directory itself
     if (rule.case && node.name !== "") {
       if (!validateCase(node.name, rule.case)) {

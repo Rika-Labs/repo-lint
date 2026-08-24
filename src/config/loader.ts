@@ -80,6 +80,10 @@ const mergeRules = (base: Rules | undefined, override: Rules | undefined): Rules
     dependencies: { ...base?.dependencies, ...override?.dependencies },
     mirror: [...(base?.mirror ?? []), ...(override?.mirror ?? [])],
     pathPrefix: [...(base?.pathPrefix ?? []), ...(override?.pathPrefix ?? [])],
+    noAncestorPrefix: [
+      ...(base?.noAncestorPrefix ?? []),
+      ...(override?.noAncestorPrefix ?? []),
+    ],
     when: { ...base?.when, ...override?.when },
     match: [...(base?.match ?? []), ...(override?.match ?? [])],
   };
@@ -204,6 +208,7 @@ const RULE_KEYS = new Set([
   "dependencies",
   "mirror",
   "pathPrefix",
+  "noAncestorPrefix",
   "when",
   "boundaries",
   "match",
